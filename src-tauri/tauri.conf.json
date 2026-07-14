@@ -10,7 +10,6 @@
     "frontendDist": "../dist"
   },
   "app": {
-    "title": "Victoria 3 Fluent Launcher",
     "windows": [
       {
         "title": "Victoria 3 Fluent Launcher",
