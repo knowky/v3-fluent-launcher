@@ -10,7 +10,6 @@
     "frontendDist": "../dist"
   },
   "app": {
-    "title": "Victoria 3 Fluent Launcher",
     "windows": [
       {
         "title": "Victoria 3 Fluent Launcher",
@@ -21,8 +20,7 @@
         "resizable": true,
         "decorations": true,
         "transparent": false,
-        "center": true,
-        "useHooks": true
+        "center": true
       }
     ],
     "security": {

@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 pub struct Database {
-    conn: Connection,
+    pub conn: Connection,
 }
 
 impl Database {
