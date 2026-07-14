@@ -9,6 +9,10 @@ on:
     branches: [main, master]
   workflow_dispatch:
 
+permissions:
+  contents: write
+  actions: read
+
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
