@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use flate2::read::ZlibDecoder;
 use std::io::Read;
+use sha2::{Sha256, Digest};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SaveInfo {
@@ -58,7 +59,7 @@ pub fn scan_save_directory(user_data_path: &str) -> Vec<SaveInfo> {
             if path.extension().map_or(false, |e| e == "v3") {
                 if let Ok(metadata) = path.metadata() {
                     let mut save_info = SaveInfo {
-                        id: sha2::Sha256::digest(
+                        id: Sha256::digest(
                             format!("{}_{}", file_name, metadata.len()).as_bytes(),
                         )
                         .iter()
