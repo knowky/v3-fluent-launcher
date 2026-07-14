@@ -55,6 +55,7 @@ interface AppState {
   createPlayset: (name: string, description: string, modOrder: string[]) => Promise<void>;
   deletePlayset: (id: string) => Promise<void>;
   createScene: (scene: Omit<Scene, "id" | "created_at" | "last_used">) => Promise<void>;
+  deleteSave: (id: string, filePath: string) => Promise<void>;
   deleteScene: (id: string) => Promise<void>;
   launchGame: (sceneId?: string, extraArgs?: string[]) => Promise<string>;
 }
@@ -182,6 +183,15 @@ export const useAppStore = create<AppState>((set, get) => ({
         launchArgs: scene.launch_args,
       });
       await get().loadScenes();
+    } catch (e: any) {
+      set({ error: String(e) });
+    }
+  },
+
+  deleteSave: async (id, filePath) => {
+    try {
+      await invoke("delete_save", { saveId: id, filePath });
+      set((s) => ({ saves: s.saves.filter((sv) => sv.id !== id) }));
     } catch (e: any) {
       set({ error: String(e) });
     }

@@ -25,14 +25,11 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Setup Rust
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: stable
-          target: x86_64-pc-windows-msvc
-
       - name: Install dependencies
         run: npm install
+
+      - name: Install Rust stable
+        run: rustup default stable
 
       - name: Build Frontend
         run: npm run build
@@ -42,6 +39,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
+          projectPath: '.'
           args: --target x86_64-pc-windows-msvc
           tagName: v__VERSION__
           releaseName: 'Victoria 3 Fluent Launcher v__VERSION__'
