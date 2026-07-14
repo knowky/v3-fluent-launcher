@@ -4,6 +4,7 @@ export default {
   theme: {
     extend: {
       colors: {
+        surface: "#2B2B2B",
         v3: {
           navy: "#1E3A5F",
           gold: "#C5A059",
