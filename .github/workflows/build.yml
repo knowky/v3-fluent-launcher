@@ -1,0 +1,103 @@
+name: Build & Release
+
+on:
+  push:
+    branches: [main, master]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  build-windows:
+    name: Build Windows (x64)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          target: x86_64-pc-windows-msvc
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Rust deps (WebView2)
+        run: |
+          # WebView2 is pre-installed on windows-latest runner
+
+      - name: Build Frontend
+        run: npm run build
+
+      - name: Generate Icons
+        run: |
+          # Generate minimal icons for Windows
+          mkdir -p src-tauri/icons
+          # Tauri will use default icons if none found, but we need at least a placeholder
+          echo "Placeholder - Tauri will generate defaults" > src-tauri/icons/icon.ico
+
+      - name: Build Tauri (Windows)
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          args: --target x86_64-pc-windows-msvc
+          tagName: v__VERSION__
+          releaseName: 'Victoria 3 Fluent Launcher v__VERSION__'
+          releaseBody: |
+            ## Victoria 3 Fluent Launcher v__VERSION__
+
+            ### 功能亮点
+            - 🎮 Fluent Design 现代 UI
+            - 📦 Mod 管理与冲突检测
+            - 💾 存档解析与时间线
+            - 🚀 场景化一键启动
+            - 🛠️ 内置工具箱
+
+            ### 安装方式
+            1. 下载 `v3-fluent-launcher_*.msi` 安装包
+            2. 或下载 `v3-fluent-launcher_*.exe` 便携版
+            3. 首次运行会自动引导设置
+
+            ### 系统要求
+            - Windows 10 1809+ 或 Windows 11
+            - WebView2 Runtime (通常已预装)
+          releaseDraft: false
+          prerelease: false
+          includeDebug: false
+          includeRelease: true
+          includeUpdaterJson: true
+
+  lint:
+    name: Lint & Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript Check
+        run: npx tsc --noEmit
+
+      - name: Lint
+        run: npx eslint src/ --ext .ts,.tsx || echo "Lint warnings (non-blocking)"

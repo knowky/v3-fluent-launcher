@@ -1,0 +1,33 @@
+[package]
+name = "v3-fluent-launcher"
+version = "1.0.0"
+description = "Victoria 3 Fluent Launcher - Modern mod manager & game launcher"
+authors = ["v3fl"]
+edition = "2021"
+
+[lib]
+name = "v3_fl_lib"
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
+tauri-plugin-shell = "2"
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rusqlite = { version = "0.31", features = ["bundled"] }
+tokio = { version = "1", features = ["full"] }
+regex = "1"
+notify = "6"
+walkdir = "2"
+flate2 = "1"
+sha2 = "0.10"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4"] }
+dirs = "5"

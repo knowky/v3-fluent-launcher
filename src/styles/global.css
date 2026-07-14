@@ -1,0 +1,242 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --mica-opacity: 0.85;
+  --acrylic-opacity: 0.6;
+  --nav-width: 240px;
+  --nav-collapsed: 64px;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  background: #1C1C1C;
+  color: #FFFFFF;
+  font-family: "Segoe UI Variable", "Microsoft YaHei", "PingFang SC", sans-serif;
+}
+
+/* Mica 材质效果 */
+.mica-bg {
+  background: rgba(28, 28, 28, var(--mica-opacity));
+  backdrop-filter: blur(30px);
+  -webkit-backdrop-filter: blur(30px);
+}
+
+/* Acrylic 材质效果 */
+.acrylic-bg {
+  background: rgba(43, 43, 43, var(--acrylic-opacity));
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+/* 卡片 */
+.card {
+  background: #2B2B2B;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  transition: all 0.15s ease;
+}
+
+.card:hover {
+  background: #333333;
+  border-color: rgba(255, 255, 255, 0.1);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+
+.card-interactive {
+  @apply card cursor-pointer;
+}
+
+.card-interactive:hover {
+  transform: scale(1.02);
+}
+
+/* 侧边导航 */
+.nav-item {
+  @apply flex items-center gap-3 px-3 py-2.5 rounded-md cursor-pointer transition-all duration-150;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 14px;
+}
+
+.nav-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.nav-item.active {
+  background: rgba(255, 255, 255, 0.1);
+  color: #FFFFFF;
+  border-left: 3px solid #C5A059;
+  padding-left: calc(0.75rem - 3px);
+}
+
+/* 按钮 */
+.btn-primary {
+  @apply px-4 py-2 rounded-md font-medium transition-all duration-150;
+  background: #C5A059;
+  color: #1C1C1C;
+}
+
+.btn-primary:hover {
+  background: #D4B06A;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(197, 160, 89, 0.3);
+}
+
+.btn-secondary {
+  @apply px-4 py-2 rounded-md font-medium transition-all duration-150;
+  background: rgba(255, 255, 255, 0.08);
+  color: #FFFFFF;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.btn-danger {
+  @apply px-4 py-2 rounded-md font-medium transition-all duration-150;
+  background: rgba(209, 52, 56, 0.15);
+  color: #D13438;
+  border: 1px solid rgba(209, 52, 56, 0.3);
+}
+
+.btn-danger:hover {
+  background: rgba(209, 52, 56, 0.25);
+}
+
+/* 滚动条 */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+/* 状态标签 */
+.status-badge {
+  @apply inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium;
+}
+
+.status-enabled {
+  background: rgba(46, 164, 79, 0.15);
+  color: #2EA44F;
+}
+
+.status-disabled {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.status-conflict {
+  background: rgba(209, 52, 56, 0.15);
+  color: #D13438;
+}
+
+.status-warning {
+  background: rgba(212, 160, 23, 0.15);
+  color: #D4A017;
+}
+
+.status-update {
+  background: rgba(0, 120, 212, 0.15);
+  color: #0078D4;
+}
+
+/* 骨架屏 */
+.skeleton {
+  background: linear-gradient(90deg, #2B2B2B 25%, #333333 50%, #2B2B2B 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 4px;
+}
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* 动画 */
+.page-enter {
+  animation: slideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.stagger-item {
+  opacity: 0;
+  animation: fadeIn 0.3s ease-out forwards;
+}
+
+/* Tooltip */
+.tooltip {
+  @apply absolute z-50 px-3 py-1.5 rounded-md text-xs;
+  background: #1C1C1C;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+
+/* Switch 开关 */
+.switch {
+  @apply relative inline-flex items-center h-5 w-9 rounded-full cursor-pointer transition-colors duration-200;
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.switch.active {
+  background: #C5A059;
+}
+
+.switch-knob {
+  @apply inline-block w-3.5 h-3.5 rounded-full bg-white transform transition-transform duration-200;
+  transform: translateX(2px);
+}
+
+.switch.active .switch-knob {
+  transform: translateX(18px);
+}
+
+/* Input */
+input[type="text"], input[type="search"] {
+  @apply bg-surface border border-white/10 rounded-md px-3 py-2 text-sm text-white placeholder-white/30;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+input[type="text"]:focus, input[type="search"]:focus {
+  border-color: #C5A059;
+}
+
+/* Select */
+select {
+  @apply bg-surface border border-white/10 rounded-md px-3 py-2 text-sm text-white;
+  outline: none;
+}
+
+/* 进度条 */
+.progress-bar {
+  @apply h-1 rounded-full overflow-hidden;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.progress-fill {
+  @apply h-full rounded-full transition-all duration-500;
+  background: linear-gradient(90deg, #C5A059, #D4B06A);
+}

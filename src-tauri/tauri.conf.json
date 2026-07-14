@@ -1,0 +1,56 @@
+{
+  "$schema": "https://raw.githubusercontent.com/nicoverbruggen/tauri-v2/main/core/tauri-config-schema/schema.json",
+  "productName": "Victoria 3 Fluent Launcher",
+  "version": "1.0.0",
+  "identifier": "com.v3fl.app",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "title": "Victoria 3 Fluent Launcher",
+    "windows": [
+      {
+        "title": "Victoria 3 Fluent Launcher",
+        "width": 1280,
+        "height": 820,
+        "minWidth": 1024,
+        "minHeight": 680,
+        "resizable": true,
+        "decorations": true,
+        "transparent": false,
+        "center": true,
+        "useHooks": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/v3fl/v3-fluent-launcher/releases/latest/download/latest.json"
+      ],
+      "pubkey": "REPLACE_WITH_YOUR_PUBLIC_KEY"
+    }
+  }
+}
