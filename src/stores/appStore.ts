@@ -10,6 +10,13 @@ import type {
 } from "../types";
 import { invoke } from "@tauri-apps/api/core";
 
+interface ActivityItem {
+  type: string;
+  title: string;
+  description: string;
+  timestamp: string;
+}
+
 interface AppState {
   // 游戏状态
   gameInfo: GameInfo | null;
@@ -32,6 +39,7 @@ interface AppState {
 
   // 仪表盘
   stats: DashboardStats | null;
+  activityFeed: ActivityItem[];
 
   // 导航
   activeNav: string;
@@ -50,14 +58,29 @@ interface AppState {
   loadScenes: () => Promise<void>;
   detectConflicts: () => Promise<void>;
   loadStats: () => Promise<void>;
+  loadActivityFeed: () => Promise<void>;
 
   toggleMod: (modId: string, enabled: boolean) => Promise<void>;
+  bulkToggleMods: (modIds: string[], enabled: boolean) => Promise<void>;
   createPlayset: (name: string, description: string, modOrder: string[]) => Promise<void>;
   deletePlayset: (id: string) => Promise<void>;
   createScene: (scene: Omit<Scene, "id" | "created_at" | "last_used">) => Promise<void>;
   deleteSave: (id: string, filePath: string) => Promise<void>;
   deleteScene: (id: string) => Promise<void>;
-  launchGame: (sceneId?: string, extraArgs?: string[]) => Promise<string>;
+  launchGame: (sceneId?: string, extraArgs?: string[], modIds?: string[]) => Promise<string>;
+  applyPlaysetToGame: (playsetId: string) => Promise<void>;
+  resolveConflict: (conflictId: string, resolution: string) => Promise<void>;
+  checkModCompatibility: () => Promise<ModVersionCheck[]>;
+  autoOptimize: () => Promise<any>;
+}
+
+interface ModVersionCheck {
+  mod_id: string;
+  mod_name: string;
+  mod_version: string;
+  game_version: string;
+  compatible: boolean;
+  message: string;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -71,6 +94,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   scenes: [],
   conflicts: [],
   stats: null,
+  activityFeed: [],
   activeNav: "dashboard",
   sidebarCollapsed: false,
 
@@ -143,11 +167,33 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
+  loadActivityFeed: async () => {
+    try {
+      const feed: ActivityItem[] = await invoke("get_activity_feed");
+      set({ activityFeed: feed });
+    } catch (e: any) {
+      // silently fail
+    }
+  },
+
   toggleMod: async (modId, enabled) => {
     try {
       await invoke("toggle_mod", { modId, enabled });
       set((s) => ({
         mods: s.mods.map((m) => (m.id === modId ? { ...m, enabled } : m)),
+      }));
+    } catch (e: any) {
+      set({ error: String(e) });
+    }
+  },
+
+  bulkToggleMods: async (modIds, enabled) => {
+    try {
+      await invoke("bulk_toggle_mods", { modIds, enabled });
+      set((s) => ({
+        mods: s.mods.map((m) =>
+          modIds.includes(m.id) ? { ...m, enabled } : m
+        ),
       }));
     } catch (e: any) {
       set({ error: String(e) });
@@ -206,17 +252,57 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  launchGame: async (sceneId, extraArgs = []) => {
+  launchGame: async (sceneId, extraArgs = [], modIds = []) => {
     try {
       const result: { success: boolean; message: string; pid: number | null } =
         await invoke("launch_game", {
           sceneId: sceneId ?? null,
           extraArgs,
+          modIds,
         });
       return result.message;
     } catch (e: any) {
       set({ error: String(e) });
       throw e;
+    }
+  },
+
+  applyPlaysetToGame: async (playsetId) => {
+    try {
+      await invoke("apply_playset_to_game", { playsetId });
+    } catch (e: any) {
+      set({ error: String(e) });
+    }
+  },
+
+  resolveConflict: async (conflictId, resolution) => {
+    try {
+      await invoke("resolve_conflict", { conflictId, resolution });
+      set((s) => ({
+        conflicts: s.conflicts.map((c) =>
+          c.id === conflictId ? { ...c, resolved: true } : c
+        ),
+      }));
+    } catch (e: any) {
+      set({ error: String(e) });
+    }
+  },
+
+  checkModCompatibility: async () => {
+    try {
+      return await invoke("check_all_mod_compatibility");
+    } catch (e: any) {
+      set({ error: String(e) });
+      return [];
+    }
+  },
+
+  autoOptimize: async () => {
+    try {
+      return await invoke("auto_optimize_settings");
+    } catch (e: any) {
+      set({ error: String(e) });
+      return null;
     }
   },
 }));

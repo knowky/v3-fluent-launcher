@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { useAppStore } from "../stores/appStore";
+import { invoke } from "@tauri-apps/api/core";
 
 interface GameConfig {
   resolution: string;
@@ -36,6 +37,8 @@ const launchArgs = [
   { flag: "-no_mods", label: "禁用所有 Mod", desc: "纯净原版启动" },
   { flag: "-windowed", label: "窗口化", desc: "以窗口模式运行" },
   { flag: "-borderless", label: "无边框窗口", desc: "无边框全屏窗口" },
+  { flag: "-no_intro", label: "跳过开场动画", desc: "直接进入主菜单" },
+  { flag: "-mem_large", label: "大内存模式", desc: "为16GB+内存启用大内存模式" },
 ];
 
 export default function Configuration() {
@@ -45,17 +48,113 @@ export default function Configuration() {
   const [customArgs, setCustomArgs] = useState("");
   const [activeTab, setActiveTab] = useState<"graphics" | "launch" | "profiles" | "scene">("graphics");
   const [saved, setSaved] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [sysInfo, setSysInfo] = useState<{ gpu_name: string; vram_mb: number; ram_mb: number; cpu_cores: number; recommended_quality: string } | null>(null);
 
-  const profiles = [
-    { id: "daily", name: "日常游玩", desc: "高画质、全 Mod", icon: "🎮" },
-    { id: "recording", name: "录制视频", desc: "最高画质、关闭 UI Mod", icon: "🎬" },
-    { id: "testing", name: "测试 Mod", desc: "Debug 模式、仅启用待测试 Mod", icon: "🧪" },
-    { id: "multiplayer", name: "多人游戏", desc: "关闭所有 Mod、平衡画质", icon: "👥" },
-  ];
+  // 从 pdx_settings.json 读取真实配置
+  useEffect(() => {
+    loadGameSettings();
+    loadSystemInfo();
+  }, []);
 
-  const handleSave = () => {
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+  const loadGameSettings = async () => {
+    try {
+      setLoading(true);
+      const settings: any = await invoke("get_game_settings");
+      if (settings) {
+        setConfig({
+          resolution: `${settings.resolution?.width || 1920}x${settings.resolution?.height || 1080}`,
+          fullscreen: settings.fullscreen ?? true,
+          refreshRate: 60,
+          qualityPreset: mapQualityToPreset(settings.quality),
+          shadowQuality: settings.shadow_quality || "medium",
+          antiAliasing: settings.anti_aliasing || "fxaa",
+          textureFiltering: settings.anisotropic || "anisotropic4",
+          uiScale: settings.ui_scale ?? 1.0,
+          vsync: settings.vsync ?? true,
+          fpsLimit: settings.fps_limit || 60,
+        });
+      }
+    } catch (e) {
+      console.log("Using default config:", e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadSystemInfo = async () => {
+    try {
+      const info: any = await invoke("get_system_info");
+      setSysInfo(info);
+    } catch (e) {
+      console.log("System info not available:", e);
+    }
+  };
+
+  const mapQualityToPreset = (q: string) => {
+    switch (q) {
+      case "low": return "performance";
+      case "medium": return "balanced";
+      case "high": return "quality";
+      default: return "balanced";
+    }
+  };
+
+  const mapPresetToQuality = (p: string) => {
+    switch (p) {
+      case "performance": return "low";
+      case "balanced": return "medium";
+      case "quality": return "high";
+      case "cinematic": return "high";
+      default: return "medium";
+    }
+  };
+
+  const handleSave = async () => {
+    try {
+      const [w, h] = config.resolution.split("x").map(Number);
+      const settings = {
+        resolution: { width: w || 1920, height: h || 1080 },
+        fullscreen: config.fullscreen,
+        quality: mapPresetToQuality(config.qualityPreset),
+        shadow_quality: config.shadowQuality,
+        anti_aliasing: config.antiAliasing,
+        texture_quality: mapPresetToQuality(config.qualityPreset),
+        ui_scale: config.uiScale,
+        vsync: config.vsync,
+        fps_limit: config.fpsLimit,
+        anisotropic: config.textureFiltering,
+      };
+      await invoke("save_game_settings", { settings });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } catch (e: any) {
+      console.error("Save failed:", e);
+    }
+  };
+
+  const handleAutoOptimize = async () => {
+    try {
+      const settings: any = await invoke("auto_optimize_settings");
+      if (settings) {
+        setConfig({
+          resolution: `${settings.resolution?.width || 1920}x${settings.resolution?.height || 1080}`,
+          fullscreen: settings.fullscreen ?? true,
+          refreshRate: 60,
+          qualityPreset: mapQualityToPreset(settings.quality),
+          shadowQuality: settings.shadow_quality || "medium",
+          antiAliasing: settings.anti_aliasing || "fxaa",
+          textureFiltering: settings.anisotropic || "anisotropic4",
+          uiScale: settings.ui_scale ?? 1.0,
+          vsync: settings.vsync ?? true,
+          fpsLimit: settings.fps_limit || 60,
+        });
+        setSaved(true);
+        setTimeout(() => setSaved(false), 3000);
+      }
+    } catch (e: any) {
+      console.error("Auto optimize failed:", e);
+    }
   };
 
   return (
@@ -63,9 +162,26 @@ export default function Configuration() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-display font-light text-white/90">配置中心</h2>
-          <p className="text-xs text-white/30 mt-0.5">游戏图形、启动参数、配置文件管理</p>
+          <p className="text-xs text-white/30 mt-0.5">图形设置读写 pdx_settings.json，真实生效</p>
         </div>
       </div>
+
+      {/* 系统信息卡片 */}
+      {sysInfo && (
+        <div className="card p-4 flex items-center gap-4 bg-aurora-purple/5 border-aurora-purple/20">
+          <div className="w-10 h-10 rounded-lg bg-aurora-purple/10 flex items-center justify-center text-lg">🖥️</div>
+          <div className="flex-1 text-xs text-white/50 space-y-0.5">
+            <span className="text-white/70">{sysInfo.gpu_name}</span>
+            <span className="mx-2">|</span>
+            <span>VRAM: {(sysInfo.vram_mb / 1024).toFixed(1)}GB</span>
+            <span className="mx-2">|</span>
+            <span>RAM: {(sysInfo.ram_mb / 1024).toFixed(0)}GB</span>
+            <span className="mx-2">|</span>
+            <span>推荐画质: <span className="text-aurora-green">{sysInfo.recommended_quality === "high" ? "高" : sysInfo.recommended_quality === "medium" ? "中" : "低"}</span></span>
+          </div>
+          <button onClick={handleAutoOptimize} className="btn-primary text-xs px-3 py-1.5">⚡ 一键优化</button>
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="flex gap-1 bg-base-700 rounded-lg p-1 w-fit">
@@ -82,66 +198,72 @@ export default function Configuration() {
 
       {activeTab === "graphics" && (
         <div className="card p-6 space-y-5">
-          <ConfigRow label="分辨率">
-            <div className="flex items-center gap-3">
-              <input type="text" value={config.resolution} onChange={(e) => setConfig({ ...config, resolution: e.target.value })} className="w-36" />
-              <label className="flex items-center gap-2 text-sm text-white/55 cursor-pointer">
-                <input type="checkbox" checked={config.fullscreen} onChange={(e) => setConfig({ ...config, fullscreen: e.target.checked })} /> 全屏
-              </label>
-              <span className="text-xs text-white/20">刷新率: {config.refreshRate}Hz</span>
-            </div>
-          </ConfigRow>
-          <ConfigRow label="画质预设">
-            <div className="grid grid-cols-4 gap-2">
-              {qualityPresets.map((preset) => (
-                <button key={preset.id} onClick={() => setConfig({ ...config, qualityPreset: preset.id })}
-                  className={`card p-3 text-center transition-all ${config.qualityPreset === preset.id ? "border-aurora-green/40 bg-aurora-green/5" : ""}`}>
-                  <span className="text-lg">{preset.icon}</span>
-                  <p className="text-sm text-white/80 mt-1">{preset.label}</p>
-                  <p className="text-[10px] text-white/25 mt-0.5">{preset.desc}</p>
-                </button>
-              ))}
-            </div>
-          </ConfigRow>
-          <ConfigRow label="阴影质量">
-            <select value={config.shadowQuality} onChange={(e) => setConfig({ ...config, shadowQuality: e.target.value })}>
-              <option value="off">关闭</option><option value="low">低</option><option value="medium">中</option><option value="high">高</option><option value="ultra">极高</option>
-            </select>
-          </ConfigRow>
-          <ConfigRow label="抗锯齿">
-            <select value={config.antiAliasing} onChange={(e) => setConfig({ ...config, antiAliasing: e.target.value })}>
-              <option value="off">关闭</option><option value="fxaa">FXAA</option><option value="msaa2">MSAA 2x</option><option value="msaa4">MSAA 4x</option><option value="msaa8">MSAA 8x</option>
-            </select>
-          </ConfigRow>
-          <ConfigRow label="纹理过滤">
-            <select value={config.textureFiltering} onChange={(e) => setConfig({ ...config, textureFiltering: e.target.value })}>
-              <option value="bilinear">双线性</option><option value="trilinear">三线性</option><option value="anisotropic4">各向异性 4x</option><option value="anisotropic8">各向异性 8x</option><option value="anisotropic16">各向异性 16x</option>
-            </select>
-          </ConfigRow>
-          <ConfigRow label="UI 缩放">
-            <div className="flex items-center gap-3">
-              <input type="range" min="0.5" max="2.0" step="0.1" value={config.uiScale}
-                onChange={(e) => setConfig({ ...config, uiScale: parseFloat(e.target.value) })} className="w-40" />
-              <span className="text-sm text-white/55">{config.uiScale}x</span>
-              <span className="text-xs text-white/20">（4K 建议 1.5x）</span>
-            </div>
-          </ConfigRow>
-          <ConfigRow label="垂直同步">
-            <button onClick={() => setConfig({ ...config, vsync: !config.vsync })} className={`switch ${config.vsync ? "active" : ""}`}><span className="switch-knob" /></button>
-          </ConfigRow>
-          <ConfigRow label="帧率限制">
-            <input type="number" value={config.fpsLimit} onChange={(e) => setConfig({ ...config, fpsLimit: Number(e.target.value) })} className="w-24" />
-          </ConfigRow>
-          <div className="flex gap-2 pt-2">
-            <button onClick={handleSave} className="btn-primary text-sm">{saved ? "✅ 已保存" : "💾 保存配置"}</button>
-            <button onClick={() => setConfig(defaultConfig)} className="btn-secondary text-sm">↩ 恢复默认</button>
-          </div>
+          {loading ? (
+            <p className="text-sm text-white/30 text-center py-8">正在加载配置...</p>
+          ) : (
+            <>
+              <ConfigRow label="分辨率">
+                <div className="flex items-center gap-3">
+                  <input type="text" value={config.resolution} onChange={(e) => setConfig({ ...config, resolution: e.target.value })} className="w-36" />
+                  <label className="flex items-center gap-2 text-sm text-white/55 cursor-pointer">
+                    <input type="checkbox" checked={config.fullscreen} onChange={(e) => setConfig({ ...config, fullscreen: e.target.checked })} /> 全屏
+                  </label>
+                  <span className="text-xs text-white/20">刷新率: {config.refreshRate}Hz</span>
+                </div>
+              </ConfigRow>
+              <ConfigRow label="画质预设">
+                <div className="grid grid-cols-4 gap-2">
+                  {qualityPresets.map((preset) => (
+                    <button key={preset.id} onClick={() => setConfig({ ...config, qualityPreset: preset.id })}
+                      className={`card p-3 text-center transition-all ${config.qualityPreset === preset.id ? "border-aurora-green/40 bg-aurora-green/5" : ""}`}>
+                      <span className="text-lg">{preset.icon}</span>
+                      <p className="text-sm text-white/80 mt-1">{preset.label}</p>
+                      <p className="text-[10px] text-white/25 mt-0.5">{preset.desc}</p>
+                    </button>
+                  ))}
+                </div>
+              </ConfigRow>
+              <ConfigRow label="阴影质量">
+                <select value={config.shadowQuality} onChange={(e) => setConfig({ ...config, shadowQuality: e.target.value })}>
+                  <option value="off">关闭</option><option value="low">低</option><option value="medium">中</option><option value="high">高</option><option value="ultra">极高</option>
+                </select>
+              </ConfigRow>
+              <ConfigRow label="抗锯齿">
+                <select value={config.antiAliasing} onChange={(e) => setConfig({ ...config, antiAliasing: e.target.value })}>
+                  <option value="off">关闭</option><option value="fxaa">FXAA</option><option value="msaa_2">MSAA 2x</option><option value="msaa_4">MSAA 4x</option><option value="msaa_8">MSAA 8x</option>
+                </select>
+              </ConfigRow>
+              <ConfigRow label="纹理过滤">
+                <select value={config.textureFiltering} onChange={(e) => setConfig({ ...config, textureFiltering: e.target.value })}>
+                  <option value="x2">各向异性 2x</option><option value="x4">各向异性 4x</option><option value="x8">各向异性 8x</option><option value="x16">各向异性 16x</option>
+                </select>
+              </ConfigRow>
+              <ConfigRow label="UI 缩放">
+                <div className="flex items-center gap-3">
+                  <input type="range" min="0.5" max="2.0" step="0.1" value={config.uiScale}
+                    onChange={(e) => setConfig({ ...config, uiScale: parseFloat(e.target.value) })} className="w-40" />
+                  <span className="text-sm text-white/55">{config.uiScale}x</span>
+                </div>
+              </ConfigRow>
+              <ConfigRow label="垂直同步">
+                <button onClick={() => setConfig({ ...config, vsync: !config.vsync })} className={`switch ${config.vsync ? "active" : ""}`}><span className="switch-knob" /></button>
+              </ConfigRow>
+              <ConfigRow label="帧率限制">
+                <input type="number" value={config.fpsLimit} onChange={(e) => setConfig({ ...config, fpsLimit: Number(e.target.value) })} className="w-24" />
+              </ConfigRow>
+              <div className="flex gap-2 pt-2">
+                <button onClick={handleSave} className="btn-primary text-sm">{saved ? "✅ 已保存到 pdx_settings.json" : "💾 保存配置"}</button>
+                <button onClick={() => setConfig(defaultConfig)} className="btn-secondary text-sm">↩ 恢复默认</button>
+                <button onClick={handleAutoOptimize} className="btn-secondary text-sm">⚡ 自动优化</button>
+              </div>
+            </>
+          )}
         </div>
       )}
 
       {activeTab === "launch" && (
         <div className="card p-6 space-y-4">
-          <p className="text-sm text-white/35">Victoria 3 启动参数（勾选以启用）</p>
+          <p className="text-sm text-white/35">Victoria 3 启动参数（勾选以启用，保存到场景中）</p>
           {launchArgs.map((arg) => (
             <label key={arg.flag} className="flex items-center gap-3 p-3 card cursor-pointer hover:bg-white/[0.03]">
               <input type="checkbox" checked={enabledArgs.has(arg.flag)} onChange={(e) => {
@@ -168,8 +290,13 @@ export default function Configuration() {
 
       {activeTab === "profiles" && (
         <div className="space-y-3">
-          <p className="text-sm text-white/35">保存多套配置，一键切换</p>
-          {profiles.map((profile) => (
+          <p className="text-sm text-white/35">保存多套配置，通过场景管理一键切换</p>
+          {([
+            { id: "daily", name: "日常游玩", desc: "高画质、Mod全开", icon: "🎮" },
+            { id: "recording", name: "录制视频", desc: "最高画质、关闭UI Mod", icon: "🎬" },
+            { id: "testing", name: "测试 Mod", desc: "Debug模式、单Mod测试", icon: "🧪" },
+            { id: "multiplayer", name: "多人游戏", desc: "关闭Mod、平衡画质", icon: "👥" },
+          ]).map((profile) => (
             <div key={profile.id} className="card p-4 flex items-center gap-4 hover:border-aurora-green/20 transition-all">
               <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-base-700 to-base-600 flex items-center justify-center text-lg">{profile.icon}</div>
               <div className="flex-1">
@@ -177,12 +304,11 @@ export default function Configuration() {
                 <p className="text-xs text-white/25">{profile.desc}</p>
               </div>
               <div className="flex gap-2">
-                <button className="btn-primary text-xs">应用</button>
-                <button className="btn-secondary text-xs">编辑</button>
+                <button onClick={handleAutoOptimize} className="btn-primary text-xs">自动优化</button>
+                <button onClick={handleSave} className="btn-secondary text-xs">保存当前</button>
               </div>
             </div>
           ))}
-          <button className="btn-secondary text-sm w-full">+ 新建配置方案</button>
         </div>
       )}
 
@@ -270,8 +396,6 @@ function SceneManager() {
     </div>
   );
 }
-
-import { useEffect } from "react";
 
 function ConfigRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (

@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+use walkdir::WalkDir;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConflictInfo {
@@ -18,19 +19,19 @@ pub struct ConflictInfo {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum ConflictType {
-    Overwrite,     // 完全覆盖
-    SameFile,      // 修改同一文件
-    Dependency,    // 依赖冲突
-    LoadOrder,     // 加载顺序
-    GameVersion,   // 游戏版本不兼容
+    Overwrite,
+    SameFile,
+    Dependency,
+    LoadOrder,
+    GameVersion,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum ConflictSeverity {
-    Critical,  // 严重：会导致崩溃
-    Major,     // 重要：功能受损
-    Minor,     // 轻微：小问题
-    Info,      // 信息：可忽略
+    Critical,
+    Major,
+    Minor,
+    Info,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -61,7 +62,6 @@ impl ConflictEngine {
     pub fn new() -> Self {
         Self {
             rules: vec![
-                // 预置规则
                 ConflictRule {
                     id: "r001".into(),
                     pattern_a: "anbeeld".into(),
@@ -72,11 +72,11 @@ impl ConflictEngine {
                 },
                 ConflictRule {
                     id: "r002".into(),
-                    pattern_a: "UI".into(),
-                    pattern_b: "UI".into(),
+                    pattern_a: "ui".into(),
+                    pattern_b: "ui".into(),
                     action: RuleAction::LoadBefore,
                     priority: 5,
-                    description: "两个 UI Mod 同时存在，后者会覆盖前者的界面修改".into(),
+                    description: "两个 UI Mod 同时存在时需注意加载顺序".into(),
                 },
                 ConflictRule {
                     id: "r003".into(),
@@ -85,6 +85,38 @@ impl ConflictEngine {
                     action: RuleAction::Incompatible,
                     priority: 20,
                     description: "全面转换 Mod 与游戏性 Mod 通常不兼容".into(),
+                },
+                ConflictRule {
+                    id: "r004".into(),
+                    pattern_a: "map".into(),
+                    pattern_b: "map".into(),
+                    action: RuleAction::Incompatible,
+                    priority: 15,
+                    description: "多个地图修改 Mod 可能互相覆盖".into(),
+                },
+                ConflictRule {
+                    id: "r005".into(),
+                    pattern_a: "localization".into(),
+                    pattern_b: "translation".into(),
+                    action: RuleAction::Compatible,
+                    priority: 8,
+                    description: "本地化和翻译 Mod 通常可以共存".into(),
+                },
+                ConflictRule {
+                    id: "r006".into(),
+                    pattern_a: "graphics".into(),
+                    pattern_b: "ui".into(),
+                    action: RuleAction::LoadAfter,
+                    priority: 12,
+                    description: "图形 Mod 应加载在 UI Mod 之前".into(),
+                },
+                ConflictRule {
+                    id: "r007".into(),
+                    pattern_a: "performance".into(),
+                    pattern_b: "graphics".into(),
+                    action: RuleAction::Compatible,
+                    priority: 6,
+                    description: "性能优化 Mod 与图形 Mod 一般兼容".into(),
                 },
             ],
         }
@@ -120,7 +152,7 @@ impl ConflictEngine {
             }
         }
 
-        // 应用规则自动分类
+        // 应用规则
         for conflict in &mut conflicts {
             self.apply_rules(conflict, mods);
         }
@@ -136,7 +168,6 @@ impl ConflictEngine {
         let path_a = PathBuf::from(&mod_a.path);
         let path_b = PathBuf::from(&mod_b.path);
 
-        // 收集两个 Mod 的所有文件路径
         let files_a = self.collect_mod_files(&path_a);
         let files_b = self.collect_mod_files(&path_b);
 
@@ -159,7 +190,7 @@ impl ConflictEngine {
                 description,
                 auto_resolvable: false,
                 suggestion: Some(format!(
-                    "建议将 '{}' 放在 '{}' 之后加载，以保留后者的修改",
+                    "建议将 '{}' 放在 '{}' 之后加载",
                     mod_b.name, mod_a.name
                 )),
                 resolved: false,
@@ -174,7 +205,6 @@ impl ConflictEngine {
         mod_a: &super::mod_manager::ModInfo,
         mod_b: &super::mod_manager::ModInfo,
     ) -> Option<ConflictInfo> {
-        // 检查 Mod A 是否依赖 Mod B 但加载顺序错误
         if mod_a.dependencies.contains(&mod_b.name) && mod_a.load_order < mod_b.load_order {
             return Some(ConflictInfo {
                 id: uuid::Uuid::new_v4().to_string(),
@@ -195,6 +225,29 @@ impl ConflictEngine {
                 resolved: false,
             });
         }
+
+        // 反向检查
+        if mod_b.dependencies.contains(&mod_a.name) && mod_b.load_order < mod_a.load_order {
+            return Some(ConflictInfo {
+                id: uuid::Uuid::new_v4().to_string(),
+                mod_a: mod_b.name.clone(),
+                mod_b: mod_a.name.clone(),
+                file_path: String::new(),
+                conflict_type: ConflictType::Dependency,
+                severity: ConflictSeverity::Critical,
+                description: format!(
+                    "'{}' 依赖 '{}'，但加载顺序不正确",
+                    mod_b.name, mod_a.name
+                ),
+                auto_resolvable: true,
+                suggestion: Some(format!(
+                    "自动将 '{}' 移动到 '{}' 之后",
+                    mod_a.name, mod_b.name
+                )),
+                resolved: false,
+            });
+        }
+
         None
     }
 
@@ -215,7 +268,7 @@ impl ConflictEngine {
                 conflict_type: ConflictType::GameVersion,
                 severity: ConflictSeverity::Minor,
                 description: format!(
-                    "'{}' 适用于游戏版本 {}，而 '{}' 适用于 {}",
+                    "'{}' 适用于版本 {}，'{}' 适用于 {}",
                     mod_a.name, mod_a.game_version, mod_b.name, mod_b.game_version
                 ),
                 auto_resolvable: false,
@@ -226,24 +279,18 @@ impl ConflictEngine {
         None
     }
 
+    /// 递归收集 Mod 文件
     fn collect_mod_files(&self, mod_path: &PathBuf) -> HashSet<String> {
         let mut files = HashSet::new();
-        let common_dir = mod_path.join("common");
-        let events_dir = mod_path.join("events");
-        let gui_dir = mod_path.join("gui");
-        let localization_dir = mod_path.join("localization");
 
-        for dir in &[common_dir, events_dir, gui_dir, localization_dir] {
+        for dir_name in &["common", "events", "gui", "localization", "gfx", "interface", "map_data", "music", "sound"] {
+            let dir = mod_path.join(dir_name);
             if dir.exists() {
-                if let Ok(entries) = std::fs::read_dir(dir) {
-                    for entry in entries.flatten() {
-                        let rel = entry
-                            .path()
-                            .strip_prefix(mod_path)
-                            .unwrap_or(&entry.path())
-                            .to_string_lossy()
-                            .to_string();
-                        files.insert(rel);
+                for entry in WalkDir::new(&dir).max_depth(3).into_iter().filter_map(|e| e.ok()) {
+                    if entry.file_type().is_file() {
+                        if let Ok(rel) = entry.path().strip_prefix(mod_path) {
+                            files.insert(rel.to_string_lossy().to_string());
+                        }
                     }
                 }
             }
@@ -269,7 +316,7 @@ impl ConflictEngine {
                     RuleAction::Compatible => {
                         conflict.severity = ConflictSeverity::Info;
                         conflict.description = format!(
-                            "根据社区规则：{} - 这两个 Mod 通常兼容",
+                            "规则匹配: {} - 这些 Mod 通常兼容",
                             rule.description
                         );
                         conflict.auto_resolvable = true;
@@ -277,7 +324,7 @@ impl ConflictEngine {
                     RuleAction::Incompatible => {
                         conflict.severity = ConflictSeverity::Critical;
                         conflict.description = format!(
-                            "根据社区规则：{} - 这两个 Mod 不兼容！",
+                            "规则匹配: {} - 这些 Mod 不兼容!",
                             rule.description
                         );
                     }
@@ -300,7 +347,18 @@ pub mod commands {
         let db = state.db.lock().unwrap();
         let mods = db.get_all_mods().map_err(|e| e.to_string())?;
         let engine = ConflictEngine::new();
-        Ok(engine.detect_all(&mods))
+        let conflicts = engine.detect_all(&mods);
+
+        // 持久化冲突
+        db.insert_conflicts(&conflicts).ok();
+        db.add_activity(
+            "conflict",
+            "冲突检测",
+            &format!("发现 {} 个冲突", conflicts.len()),
+        )
+        .ok();
+
+        Ok(conflicts)
     }
 
     #[tauri::command]
@@ -311,7 +369,9 @@ pub mod commands {
     ) -> Result<(), String> {
         let db = state.db.lock().unwrap();
         db.mark_conflict_resolved(&conflict_id, &resolution)
-            .map_err(|e| e.to_string())
+            .map_err(|e| e.to_string())?;
+        db.add_activity("conflict", "冲突已解决", &resolution).ok();
+        Ok(())
     }
 
     #[tauri::command]
@@ -336,7 +396,6 @@ pub mod commands {
 
             std::fs::create_dir_all(&patch_dir).map_err(|e| e.to_string())?;
 
-            // 写入合并内容
             let rel_path = conflict_file.replace('\\', "/");
             let target_file = patch_dir.join(&rel_path);
             if let Some(parent) = target_file.parent() {
@@ -344,7 +403,6 @@ pub mod commands {
             }
             std::fs::write(&target_file, &merged_content).map_err(|e| e.to_string())?;
 
-            // 创建 .mod 描述符
             let descriptor = format!(
                 r#"name="V3FL Patch: {} + {}"
 path="mod/v3fl_patch"
@@ -359,6 +417,9 @@ tags={{
                 .join("mod")
                 .join("v3fl_patch.mod");
             std::fs::write(&descriptor_path, descriptor).map_err(|e| e.to_string())?;
+
+            let db = state.db.lock().unwrap();
+            db.add_activity("patch", "补丁已生成", &format!("为 {} 和 {} 创建了兼容补丁", mod_a, mod_b)).ok();
 
             Ok("补丁 Mod 已生成: v3fl_patch".to_string())
         } else {

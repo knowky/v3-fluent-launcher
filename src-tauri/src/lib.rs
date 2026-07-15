@@ -5,6 +5,7 @@ mod conflict_resolver;
 mod database;
 mod game_launcher;
 mod scene_manager;
+mod config_manager;
 
 use tauri::Manager;
 use std::sync::Mutex;
@@ -47,11 +48,15 @@ pub fn run() {
             mod_manager::commands::scan_mods,
             mod_manager::commands::get_mods,
             mod_manager::commands::toggle_mod,
+            mod_manager::commands::bulk_toggle_mods,
+            mod_manager::commands::update_mod_order,
             mod_manager::commands::create_playset,
             mod_manager::commands::delete_playset,
             mod_manager::commands::get_playsets,
             mod_manager::commands::update_playset_order,
             mod_manager::commands::get_mod_dependencies,
+            mod_manager::commands::check_all_mod_compatibility,
+            mod_manager::commands::apply_playset_to_game,
 
             // 存档管理
             save_parser::commands::scan_saves,
@@ -66,6 +71,13 @@ pub fn run() {
             conflict_resolver::commands::get_conflict_rules,
             conflict_resolver::commands::generate_patch_mod,
 
+            // 配置管理
+            config_manager::commands::get_game_settings,
+            config_manager::commands::save_game_settings,
+            config_manager::commands::get_system_info,
+            config_manager::commands::get_optimized_launch_args,
+            config_manager::commands::auto_optimize_settings,
+
             // 场景管理
             scene_manager::commands::create_scene,
             scene_manager::commands::get_scenes,
@@ -78,9 +90,12 @@ pub fn run() {
             game_launcher::commands::get_launch_history,
             game_launcher::commands::validate_game_files,
 
-            // 数据库
+            // 数据库 & 设置
             database::commands::get_dashboard_stats,
             database::commands::get_activity_feed,
+            database::commands::get_app_settings,
+            database::commands::save_app_setting,
+            database::commands::get_app_setting,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Victoria 3 Fluent Launcher");

@@ -41,7 +41,10 @@ impl Database {
                 conflict_count INTEGER DEFAULT 0,
                 game_version TEXT,
                 chinese_name TEXT,
-                chinese_description TEXT
+                chinese_description TEXT,
+                steam_id TEXT,
+                archive_path TEXT,
+                picture TEXT
             );
 
             CREATE TABLE IF NOT EXISTS playsets (
@@ -144,8 +147,9 @@ impl Database {
         self.conn.execute(
             "INSERT OR REPLACE INTO mods (id, name, display_name, version, source, path, enabled,
              load_order, dependencies, thumbnail, description, tags, size, last_updated,
-             has_update, conflict_count, game_version, chinese_name, chinese_description)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)",
+             has_update, conflict_count, game_version, chinese_name, chinese_description,
+             steam_id, archive_path, picture)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)",
             rusqlite::params![
                 mod_info.id,
                 mod_info.name,
@@ -166,6 +170,9 @@ impl Database {
                 mod_info.game_version,
                 mod_info.chinese_name,
                 mod_info.chinese_description,
+                mod_info.steam_id,
+                mod_info.archive_path,
+                mod_info.picture,
             ],
         )?;
         Ok(())
@@ -175,13 +182,14 @@ impl Database {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, display_name, version, source, path, enabled, load_order,
              dependencies, thumbnail, description, tags, size, last_updated, has_update,
-             conflict_count, game_version, chinese_name, chinese_description FROM mods",
+             conflict_count, game_version, chinese_name, chinese_description,
+             steam_id, archive_path, picture FROM mods",
         )?;
 
         let mods = stmt
             .query_map([], |row| {
-                let deps: String = row.get(8)?;
-                let tags: String = row.get(11)?;
+                let deps_str: String = row.get(8)?;
+                let tags_str: String = row.get(11)?;
                 let source_str: String = row.get(4)?;
                 let source = match source_str.as_str() {
                     "Local" => super::mod_manager::ModSource::Local,
@@ -198,10 +206,10 @@ impl Database {
                     path: row.get(5)?,
                     enabled: row.get::<_, i32>(6)? != 0,
                     load_order: row.get(7)?,
-                    dependencies: deps.split(',').filter(|s| !s.is_empty()).map(String::from).collect(),
+                    dependencies: deps_str.split(',').filter(|s| !s.is_empty()).map(String::from).collect(),
                     thumbnail: row.get(9)?,
                     description: row.get(10)?,
-                    tags: tags.split(',').filter(|s| !s.is_empty()).map(String::from).collect(),
+                    tags: tags_str.split(',').filter(|s| !s.is_empty()).map(String::from).collect(),
                     size: row.get::<_, i64>(12)? as u64,
                     last_updated: row.get(13)?,
                     has_update: row.get::<_, i32>(14)? != 0,
@@ -209,6 +217,9 @@ impl Database {
                     game_version: row.get(16)?,
                     chinese_name: row.get(17)?,
                     chinese_description: row.get(18)?,
+                    steam_id: row.get(19)?,
+                    archive_path: row.get(20)?,
+                    picture: row.get(21)?,
                 })
             })?
             .filter_map(|r| r.ok())
@@ -238,15 +249,16 @@ impl Database {
         let mut result = Vec::new();
         for name in dep_names {
             let mut stmt = self.conn.prepare(
-                "SELECT id, name, display_name, version, source, path, enabled FROM mods WHERE name = ?1",
+                "SELECT id, name, display_name, version, source, path, enabled, steam_id, archive_path, picture FROM mods WHERE name = ?1",
             )?;
             if let Ok(row) = stmt.query_row([name], |row| {
+                let s: String = row.get(4)?;
                 Ok(super::mod_manager::ModInfo {
                     id: row.get(0)?,
                     name: row.get(1)?,
                     display_name: row.get(2)?,
                     version: row.get(3)?,
-                    source: super::mod_manager::ModSource::Steam,
+                    source: match s.as_str() { "Local"=>super::mod_manager::ModSource::Local, "GitHub"=>super::mod_manager::ModSource::GitHub, _=>super::mod_manager::ModSource::Steam },
                     path: row.get(5)?,
                     enabled: row.get::<_, i32>(6)? != 0,
                     load_order: 0,
@@ -261,12 +273,26 @@ impl Database {
                     game_version: String::new(),
                     chinese_name: None,
                     chinese_description: None,
+                    steam_id: row.get(7)?,
+                    archive_path: row.get(8)?,
+                    picture: row.get(9)?,
                 })
             }) {
                 result.push(row);
             }
         }
         Ok(result)
+    }
+
+    /// 根据 load_order 更新 mod 顺序
+    pub fn batch_update_mod_order(&self, mod_order: &[(String, i32)]) -> SqlResult<()> {
+        for (id, order) in mod_order {
+            self.conn.execute(
+                "UPDATE mods SET load_order = ?1 WHERE id = ?2",
+                rusqlite::params![order, id],
+            )?;
+        }
+        Ok(())
     }
 
     // ========== Playset 操作 ==========
@@ -501,6 +527,67 @@ impl Database {
 
     // ========== 冲突操作 ==========
 
+    pub fn insert_conflicts(&self, conflicts: &[super::conflict_resolver::ConflictInfo]) -> SqlResult<()> {
+        for c in conflicts {
+            self.conn.execute(
+                "INSERT OR REPLACE INTO conflicts (id, mod_a, mod_b, file_path, conflict_type,
+                 severity, description, auto_resolvable, suggestion, resolved)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 0)",
+                rusqlite::params![
+                    c.id,
+                    c.mod_a,
+                    c.mod_b,
+                    c.file_path,
+                    format!("{:?}", c.conflict_type),
+                    format!("{:?}", c.severity),
+                    c.description,
+                    c.auto_resolvable as i32,
+                    c.suggestion,
+                ],
+            )?;
+        }
+        Ok(())
+    }
+
+    pub fn get_all_conflicts(&self) -> SqlResult<Vec<super::conflict_resolver::ConflictInfo>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, mod_a, mod_b, file_path, conflict_type, severity,
+             description, auto_resolvable, suggestion, resolved
+             FROM conflicts WHERE resolved = 0",
+        )?;
+
+        let conflicts = stmt
+            .query_map([], |row| {
+                Ok(super::conflict_resolver::ConflictInfo {
+                    id: row.get(0)?,
+                    mod_a: row.get(1)?,
+                    mod_b: row.get(2)?,
+                    file_path: row.get(3)?,
+                    conflict_type: match row.get::<_, String>(4)?.as_str() {
+                        "SameFile" => super::conflict_resolver::ConflictType::SameFile,
+                        "Dependency" => super::conflict_resolver::ConflictType::Dependency,
+                        "LoadOrder" => super::conflict_resolver::ConflictType::LoadOrder,
+                        "GameVersion" => super::conflict_resolver::ConflictType::GameVersion,
+                        _ => super::conflict_resolver::ConflictType::Overwrite,
+                    },
+                    severity: match row.get::<_, String>(5)?.as_str() {
+                        "Critical" => super::conflict_resolver::ConflictSeverity::Critical,
+                        "Major" => super::conflict_resolver::ConflictSeverity::Major,
+                        "Minor" => super::conflict_resolver::ConflictSeverity::Minor,
+                        _ => super::conflict_resolver::ConflictSeverity::Info,
+                    },
+                    description: row.get(6)?,
+                    auto_resolvable: row.get::<_, i32>(7)? != 0,
+                    suggestion: row.get(8)?,
+                    resolved: row.get::<_, i32>(9)? != 0,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        Ok(conflicts)
+    }
+
     pub fn mark_conflict_resolved(
         &self,
         conflict_id: &str,
@@ -509,6 +596,47 @@ impl Database {
         self.conn.execute(
             "UPDATE conflicts SET resolved = 1, resolution = ?1 WHERE id = ?2",
             rusqlite::params![resolution, conflict_id],
+        )?;
+        Ok(())
+    }
+
+    // ========== 设置操作 ==========
+
+    pub fn get_setting(&self, key: &str) -> SqlResult<Option<String>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT value FROM settings WHERE key = ?1")?;
+        let result = stmt.query_row([key], |row| row.get(0));
+        match result {
+            Ok(val) => Ok(Some(val)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    pub fn set_setting(&self, key: &str, value: &str) -> SqlResult<()> {
+        self.conn.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES (?1, ?2)",
+            rusqlite::params![key, value],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_all_settings(&self) -> SqlResult<Vec<(String, String)>> {
+        let mut stmt = self.conn.prepare("SELECT key, value FROM settings")?;
+        let settings = stmt
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(settings)
+    }
+
+    // ========== 活动记录 ==========
+
+    pub fn add_activity(&self, event_type: &str, title: &str, description: &str) -> SqlResult<()> {
+        self.conn.execute(
+            "INSERT INTO activity_feed (event_type, title, description, timestamp, read) VALUES (?1, ?2, ?3, ?4, 0)",
+            rusqlite::params![event_type, title, description, chrono::Utc::now().to_rfc3339()],
         )?;
         Ok(())
     }
@@ -605,5 +733,30 @@ pub mod commands {
             .collect();
 
         Ok(feed)
+    }
+
+    #[tauri::command]
+    pub async fn get_app_settings(state: State<'_, AppState>) -> Result<Vec<(String, String)>, String> {
+        let db = state.db.lock().unwrap();
+        db.get_all_settings().map_err(|e| e.to_string())
+    }
+
+    #[tauri::command]
+    pub async fn save_app_setting(
+        state: State<'_, AppState>,
+        key: String,
+        value: String,
+    ) -> Result<(), String> {
+        let db = state.db.lock().unwrap();
+        db.set_setting(&key, &value).map_err(|e| e.to_string())
+    }
+
+    #[tauri::command]
+    pub async fn get_app_setting(
+        state: State<'_, AppState>,
+        key: String,
+    ) -> Result<Option<String>, String> {
+        let db = state.db.lock().unwrap();
+        db.get_setting(&key).map_err(|e| e.to_string())
     }
 }

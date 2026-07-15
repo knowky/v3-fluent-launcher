@@ -20,6 +20,7 @@ pub struct LaunchHistoryItem {
 pub mod commands {
     use super::*;
     use crate::AppState;
+    use crate::mod_manager::write_dlc_load_json;
     use tauri::State;
 
     #[tauri::command]
@@ -27,6 +28,7 @@ pub mod commands {
         state: State<'_, AppState>,
         scene_id: Option<String>,
         extra_args: Vec<String>,
+        mod_ids: Vec<String>,
     ) -> Result<LaunchResult, String> {
         let paths_guard = state.game_paths.lock().unwrap();
 
@@ -35,6 +37,11 @@ pub mod commands {
 
             if !std::path::Path::new(exe_path).exists() {
                 return Err(format!("游戏可执行文件不存在: {}", exe_path));
+            }
+
+            // 写入 dlc_load.json 设置 mod 加载顺序
+            if !mod_ids.is_empty() {
+                write_dlc_load_json(&paths.user_data_path, &mod_ids)?;
             }
 
             // 构建启动参数
@@ -50,32 +57,63 @@ pub mod commands {
                 }
             }
 
-            // 额外参数
-            args.extend(extra_args);
+            // 额外参数（去重）
+            for arg in &extra_args {
+                if !args.contains(arg) {
+                    args.push(arg.clone());
+                }
+            }
 
             // 启动游戏
-            let child = Command::new(exe_path)
+            match Command::new(exe_path)
                 .args(&args)
                 .spawn()
-                .map_err(|e| format!("启动游戏失败: {}", e))?;
+            {
+                Ok(child) => {
+                    let pid = child.id();
 
-            let pid = child.id();
+                    // 记录启动历史和活动
+                    let db = state.db.lock().unwrap();
+                    db.conn.execute(
+                        "INSERT INTO launch_history (scene_id, launched_at, crash) VALUES (?1, ?2, 0)",
+                        rusqlite::params![scene_id, chrono::Utc::now().to_rfc3339()],
+                    ).ok();
 
-            // 记录启动历史
-            let db = state.db.lock().unwrap();
-            db.conn.execute(
-                "INSERT INTO launch_history (scene_id, launched_at, crash) VALUES (?1, ?2, 0)",
-                rusqlite::params![scene_id, chrono::Utc::now().to_rfc3339()],
-            )
-            .ok();
+                    let mod_info = if !mod_ids.is_empty() {
+                        format!(" ({} 个 Mod)", mod_ids.len())
+                    } else {
+                        String::new()
+                    };
 
-            Ok(LaunchResult {
-                success: true,
-                message: format!("游戏已启动 (PID: {})", pid),
-                pid: Some(pid),
-            })
+                    db.add_activity(
+                        "launch",
+                        "游戏已启动",
+                        &format!("Victoria 3 已启动{} | PID: {}", mod_info, pid),
+                    ).ok();
+
+                    // 更新场景最后使用时间
+                    if let Some(ref sid) = scene_id {
+                        db.conn.execute(
+                            "UPDATE scenes SET last_used = ?1 WHERE id = ?2",
+                            rusqlite::params![chrono::Utc::now().to_rfc3339(), sid],
+                        ).ok();
+                    }
+
+                    Ok(LaunchResult {
+                        success: true,
+                        message: format!("游戏已启动 (PID: {})", pid),
+                        pid: Some(pid),
+                    })
+                }
+                Err(e) => {
+                    let db = state.db.lock().unwrap();
+                    db.add_activity("error", "启动失败", &format!("{}", e)).ok();
+
+                    Err(format!("启动游戏失败: {}", e))
+                }
+            }
         } else {
-            Err("未检测到游戏路径，请先配置".to_string())
+            Err("未检测到游戏路径，请先检测 Steam 安装".to_string())
         }
     }
 
@@ -121,7 +159,6 @@ pub mod commands {
                 return Err("游戏可执行文件缺失，请通过 Steam 验证游戏文件完整性".to_string());
             }
 
-            // 检查关键目录
             let checks = vec![
                 ("游戏主程序", exe.exists()),
                 (
@@ -138,11 +175,27 @@ pub mod commands {
                         .join("events")
                         .exists(),
                 ),
+                (
+                    "localization 目录",
+                    std::path::Path::new(&paths.game_path)
+                        .join("game")
+                        .join("localization")
+                        .exists(),
+                ),
+                (
+                    "gui 目录",
+                    std::path::Path::new(&paths.game_path)
+                        .join("game")
+                        .join("gui")
+                        .exists(),
+                ),
             ];
 
             let failures: Vec<_> = checks.iter().filter(|(_, ok)| !ok).collect();
 
             if failures.is_empty() {
+                let db = state.db.lock().unwrap();
+                db.add_activity("verify", "文件验证", "所有游戏文件验证通过").ok();
                 Ok("所有游戏文件验证通过".to_string())
             } else {
                 let names: Vec<_> = failures.iter().map(|(name, _)| *name).collect();

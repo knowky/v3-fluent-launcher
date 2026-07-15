@@ -40,6 +40,9 @@ export interface ModInfo {
   game_version: string;
   chinese_name: string | null;
   chinese_description: string | null;
+  steam_id?: string | null;
+  archive_path?: string | null;
+  picture?: string | null;
 }
 
 export interface Playset {
