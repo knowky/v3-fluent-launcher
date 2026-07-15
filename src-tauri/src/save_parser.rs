@@ -318,7 +318,7 @@ fn resolve_country_name(tag: &str) -> String {
         "ARG" | "PLT" => "阿根廷".to_string(),
         "CAN" => "加拿大".to_string(),
         "COL" => "哥伦比亚".to_string(),
-        "PER" | "PEU" => "秘鲁".to_string(),
+        "PEU" => "秘鲁".to_string(),
 
         // 其他
         "GRE" => "希腊".to_string(),
@@ -332,7 +332,7 @@ fn resolve_country_name(tag: &str) -> String {
         "EGY" => "埃及".to_string(),
         "ETH" => "埃塞俄比亚".to_string(),
         "SOU" | "SAF" => "南非".to_string(),
-        "AUS" | "AST" => "澳大利亚".to_string(),
+        "AST" => "澳大利亚".to_string(),
         "NZL" | "NEW" => "新西兰".to_string(),
 
         _ => {
