@@ -179,6 +179,6 @@ pub mod commands {
             .map(|p| p.user_data_path.clone())
             .ok_or_else(|| "游戏路径未检测到".to_string())?;
 
-        read_game_log(&user_data)
+        super::read_game_log(&user_data)
     }
 }
