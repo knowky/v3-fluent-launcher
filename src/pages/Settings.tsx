@@ -133,7 +133,7 @@ export default function Settings() {
 
       {/* About */}
       <SettingsSection title="关于" icon="ℹ️">
-        <SettingsRow label="版本" value="1.0.3" />
+        <SettingsRow label="版本" value="1.0.4" />
         <SettingsRow label="Tauri" value="2.0" />
         <SettingsRow label="前端" value="React 18 + Tailwind CSS" />
         <SettingsRow label="后端" value="Rust + SQLite" />
