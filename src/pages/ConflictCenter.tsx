@@ -42,8 +42,31 @@ export default function ConflictCenter() {
     setResolving(null);
   };
 
-  const handleIgnore = (conflict: ConflictInfo) => {
+  const handleIgnore = async (conflict: ConflictInfo) => {
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("resolve_conflict", { conflictId: conflict.id, resolution: "ignored" });
+      await detectConflicts();
+    } catch (e: any) {
+      console.error("Ignore failed:", e);
+    }
     setSelectedConflict(null);
+  };
+
+  const handleManualMerge = async (conflict: ConflictInfo) => {
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("generate_patch_mod", {
+        modA: conflict.mod_a,
+        modB: conflict.mod_b,
+        filePath: conflict.file_path || "",
+      });
+      alert("兼容补丁 Mod 已生成到 Mod 目录，请检查并启用。");
+      await detectConflicts();
+    } catch (e: any) {
+      console.error("Manual merge failed:", e);
+      alert("合并失败: " + String(e));
+    }
   };
 
   return (
@@ -146,7 +169,7 @@ export default function ConflictCenter() {
                     {resolving === selectedConflict.id ? "解决中..." : "自动解决"}
                   </button>
                 )}
-                <button className="btn-secondary text-sm flex-1">手动合并</button>
+                <button onClick={() => handleManualMerge(selectedConflict)} className="btn-secondary text-sm flex-1">手动合并</button>
                 <button onClick={() => handleIgnore(selectedConflict)} className="btn-secondary text-sm">忽略</button>
               </div>
             </div>

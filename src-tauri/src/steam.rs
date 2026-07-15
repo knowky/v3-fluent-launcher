@@ -21,6 +21,24 @@ pub struct GameInfo {
     pub mod_count: usize,
 }
 
+/// 统计已安装的 DLC 数量
+fn count_dlcs(game_path: &str) -> usize {
+    let dlc_dir = PathBuf::from(game_path).join("game").join("dlc");
+    if !dlc_dir.exists() {
+        // 也尝试直接在 game 目录下查找 dlc 子目录
+        let alt_dlc = PathBuf::from(game_path).join("dlc");
+        if alt_dlc.exists() {
+            return std::fs::read_dir(&alt_dlc)
+                .map(|r| r.filter_map(|e| e.ok()).filter(|e| e.path().is_dir()).count())
+                .unwrap_or(0);
+        }
+        return 0;
+    }
+    std::fs::read_dir(&dlc_dir)
+        .map(|r| r.filter_map(|e| e.ok()).filter(|e| e.path().is_dir()).count())
+        .unwrap_or(0)
+}
+
 /// 自动检测 Steam 和 Victoria 3 路径
 pub fn detect_game_paths() -> Result<GamePaths, String> {
     // Windows 注册表检测 Steam 安装路径
@@ -169,11 +187,14 @@ pub mod commands {
                 0
             };
 
+            // 检测 DLC 数量
+            let dlc_count = count_dlcs(&paths.game_path);
+
             GameInfo {
                 paths: Some(paths.clone()),
                 installed: true,
                 version: paths.version.clone(),
-                dlc_count: 0,
+                dlc_count,
                 mod_count,
             }
         } else {

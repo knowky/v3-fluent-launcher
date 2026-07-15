@@ -453,4 +453,137 @@ pub mod commands {
             .map_err(|e| format!("导出失败: {}", e))?;
         Ok(())
     }
+
+    // ========== 存档备份 ==========
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct SaveBackup {
+        pub name: String,
+        pub file_path: String,
+        pub date: String,
+        pub size: u64,
+    }
+
+    fn get_backup_dir(state: &AppState) -> Result<PathBuf, String> {
+        let paths = state.game_paths.lock().unwrap();
+        let user_data = paths
+            .as_ref()
+            .map(|p| p.user_data_path.clone())
+            .ok_or_else(|| "游戏路径未检测到".to_string())?;
+        let backup_dir = PathBuf::from(&user_data).join("save games").join("_backups");
+        std::fs::create_dir_all(&backup_dir).map_err(|e| format!("创建备份目录失败: {}", e))?;
+        Ok(backup_dir)
+    }
+
+    #[tauri::command]
+    pub async fn create_save_backup(
+        state: State<'_, AppState>,
+        save_id: String,
+        file_path: String,
+    ) -> Result<SaveBackup, String> {
+        let backup_dir = get_backup_dir(&state)?;
+        let src = PathBuf::from(&file_path);
+        let file_name = src.file_name().unwrap_or_default().to_string_lossy().to_string();
+        let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S").to_string();
+        let backup_name = format!("backup_{}_{}", timestamp, file_name);
+        let dest = backup_dir.join(&backup_name);
+
+        std::fs::copy(&file_path, &dest)
+            .map_err(|e| format!("备份失败: {}", e))?;
+
+        let size = dest.metadata().map(|m| m.len()).unwrap_or(0);
+
+        let db = state.db.lock().unwrap();
+        db.add_activity("backup", "创建备份", &format!("备份存档: {}", file_name)).ok();
+
+        Ok(SaveBackup {
+            name: backup_name,
+            file_path: dest.to_string_lossy().to_string(),
+            date: chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+            size,
+        })
+    }
+
+    #[tauri::command]
+    pub async fn list_save_backups(
+        state: State<'_, AppState>,
+    ) -> Result<Vec<SaveBackup>, String> {
+        let backup_dir = get_backup_dir(&state)?;
+        let mut backups = Vec::new();
+
+        if let Ok(entries) = std::fs::read_dir(&backup_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_file() && path.extension().map_or(false, |e| e == "v3") {
+                    if let Ok(meta) = path.metadata() {
+                        let created = meta
+                            .modified()
+                            .ok()
+                            .and_then(|t| {
+                                chrono::DateTime::from_timestamp(
+                                    t.duration_since(std::time::UNIX_EPOCH)
+                                        .unwrap_or_default()
+                                        .as_secs() as i64,
+                                    0,
+                                )
+                            })
+                            .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
+                            .unwrap_or_else(|| "未知".to_string());
+
+                        backups.push(SaveBackup {
+                            name: path.file_name().unwrap_or_default().to_string_lossy().to_string(),
+                            file_path: path.to_string_lossy().to_string(),
+                            date: created,
+                            size: meta.len(),
+                        });
+                    }
+                }
+            }
+        }
+
+        // 按日期倒序
+        backups.sort_by(|a, b| b.date.cmp(&a.date));
+        Ok(backups)
+    }
+
+    #[tauri::command]
+    pub async fn restore_save_backup(
+        state: State<'_, AppState>,
+        backup_name: String,
+        target_file_name: String,
+    ) -> Result<(), String> {
+        let backup_dir = get_backup_dir(&state)?;
+        let src = backup_dir.join(&backup_name);
+        if !src.exists() {
+            return Err("备份文件不存在".to_string());
+        }
+
+        let paths = state.game_paths.lock().unwrap();
+        let user_data = paths
+            .as_ref()
+            .map(|p| p.user_data_path.clone())
+            .ok_or_else(|| "游戏路径未检测到".to_string())?;
+        let save_dir = PathBuf::from(&user_data).join("save games");
+        let dest = save_dir.join(&target_file_name);
+
+        std::fs::copy(&src, &dest)
+            .map_err(|e| format!("恢复失败: {}", e))?;
+
+        let db = state.db.lock().unwrap();
+        db.add_activity("restore", "恢复备份", &format!("恢复备份: {}", backup_name)).ok();
+
+        Ok(())
+    }
+
+    #[tauri::command]
+    pub async fn delete_save_backup(
+        state: State<'_, AppState>,
+        backup_name: String,
+    ) -> Result<(), String> {
+        let backup_dir = get_backup_dir(&state)?;
+        let file = backup_dir.join(&backup_name);
+        std::fs::remove_file(&file)
+            .map_err(|e| format!("删除备份失败: {}", e))?;
+        Ok(())
+    }
 }

@@ -6,6 +6,7 @@ mod database;
 mod game_launcher;
 mod scene_manager;
 mod config_manager;
+mod toolbox;
 
 use tauri::Manager;
 use std::sync::Mutex;
@@ -64,6 +65,10 @@ pub fn run() {
             save_parser::commands::parse_save_detail,
             save_parser::commands::delete_save,
             save_parser::commands::export_save,
+            save_parser::commands::create_save_backup,
+            save_parser::commands::list_save_backups,
+            save_parser::commands::restore_save_backup,
+            save_parser::commands::delete_save_backup,
 
             // 冲突解决
             conflict_resolver::commands::detect_conflicts,
@@ -96,6 +101,14 @@ pub fn run() {
             database::commands::get_app_settings,
             database::commands::save_app_setting,
             database::commands::get_app_setting,
+            database::commands::save_config_profile,
+            database::commands::get_config_profiles,
+            database::commands::delete_config_profile,
+
+            // 工具箱
+            toolbox::commands::list_screenshots,
+            toolbox::commands::clean_cache,
+            toolbox::commands::read_game_log,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Victoria 3 Fluent Launcher");

@@ -127,6 +127,16 @@ impl Database {
                 value TEXT
             );
 
+            CREATE TABLE IF NOT EXISTS config_profiles (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                config_json TEXT,
+                launch_args TEXT,
+                created_at TEXT,
+                updated_at TEXT,
+                description TEXT DEFAULT ''
+            );
+
             CREATE TABLE IF NOT EXISTS activity_feed (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 event_type TEXT,
@@ -600,6 +610,57 @@ impl Database {
         Ok(())
     }
 
+    // ========== 配置方案操作 ==========
+
+    pub fn save_config_profile(
+        &self,
+        id: &str,
+        name: &str,
+        config_json: &str,
+        launch_args: &str,
+        description: &str,
+    ) -> SqlResult<()> {
+        let now = chrono::Utc::now().to_rfc3339();
+        self.conn.execute(
+            "INSERT INTO config_profiles (id, name, config_json, launch_args, created_at, updated_at, description)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+             ON CONFLICT(id) DO UPDATE SET name=?2, config_json=?3, launch_args=?4, updated_at=?6, description=?7",
+            rusqlite::params![id, name, config_json, launch_args, now, now, description],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_config_profiles(
+        &self,
+    ) -> SqlResult<Vec<serde_json::Value>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, name, config_json, launch_args, created_at, updated_at, description FROM config_profiles ORDER BY updated_at DESC")?;
+
+        let profiles = stmt
+            .query_map([], |row| {
+                Ok(serde_json::json!({
+                    "id": row.get::<_, String>(0)?,
+                    "name": row.get::<_, String>(1)?,
+                    "config_json": row.get::<_, String>(2)?,
+                    "launch_args": row.get::<_, String>(3)?,
+                    "created_at": row.get::<_, String>(4)?,
+                    "updated_at": row.get::<_, String>(5)?,
+                    "description": row.get::<_, String>(6)?,
+                }))
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        Ok(profiles)
+    }
+
+    pub fn delete_config_profile(&self, id: &str) -> SqlResult<()> {
+        self.conn
+            .execute("DELETE FROM config_profiles WHERE id = ?1", [id])?;
+        Ok(())
+    }
+
     // ========== 设置操作 ==========
 
     pub fn get_setting(&self, key: &str) -> SqlResult<Option<String>> {
@@ -758,5 +819,38 @@ pub mod commands {
     ) -> Result<Option<String>, String> {
         let db = state.db.lock().unwrap();
         db.get_setting(&key).map_err(|e| e.to_string())
+    }
+
+    // ========== 配置方案命令 ==========
+
+    #[tauri::command]
+    pub async fn save_config_profile(
+        state: State<'_, AppState>,
+        id: String,
+        name: String,
+        config_json: String,
+        launch_args: String,
+        description: String,
+    ) -> Result<(), String> {
+        let db = state.db.lock().unwrap();
+        db.save_config_profile(&id, &name, &config_json, &launch_args, &description)
+            .map_err(|e| e.to_string())
+    }
+
+    #[tauri::command]
+    pub async fn get_config_profiles(
+        state: State<'_, AppState>,
+    ) -> Result<Vec<serde_json::Value>, String> {
+        let db = state.db.lock().unwrap();
+        db.get_config_profiles().map_err(|e| e.to_string())
+    }
+
+    #[tauri::command]
+    pub async fn delete_config_profile(
+        state: State<'_, AppState>,
+        id: String,
+    ) -> Result<(), String> {
+        let db = state.db.lock().unwrap();
+        db.delete_config_profile(&id).map_err(|e| e.to_string())
     }
 }

@@ -19,8 +19,8 @@ const itemAnim = {
 
 export default function Dashboard() {
   const {
-    gameInfo, scenes, stats, mods, saves, conflicts,
-    loadStats, loadScenes, scanMods, scanSaves, detectConflicts,
+    gameInfo, scenes, stats, mods, saves, conflicts, activityFeed,
+    loadStats, loadScenes, scanMods, scanSaves, detectConflicts, loadActivityFeed,
     isScanning, launchGame,
   } = useAppStore();
   const navigate = useNavigate();
@@ -29,6 +29,7 @@ export default function Dashboard() {
   useEffect(() => {
     loadStats();
     loadScenes();
+    loadActivityFeed();
   }, []);
 
   const enabledMods = mods.filter((m) => m.enabled).length;
@@ -199,6 +200,34 @@ export default function Dashboard() {
           )}
         </div>
       </motion.div>
+
+      {/* Activity Feed */}
+      <motion.div variants={itemAnim}>
+        <h3 className="text-sm font-semibold text-white/70 mb-3 flex items-center gap-2">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12" stroke="currentColor" strokeWidth="1.5"/></svg>
+          活动提要
+        </h3>
+        <div className="card p-4 space-y-1">
+          {activityFeed.length === 0 ? (
+            <p className="text-center text-white/15 py-6 text-sm">暂无活动记录</p>
+          ) : (
+            activityFeed.slice(0, 10).map((item, i) => (
+              <div key={i} className="flex items-start gap-3 py-2.5 border-b border-white/5 last:border-0">
+                <span className="text-sm flex-shrink-0 mt-0.5">
+                  {item.type === "scan" ? "🔍" : item.type === "launch" ? "🚀" :
+                   item.type === "backup" ? "💾" : item.type === "restore" ? "📥" :
+                   item.type === "delete" ? "🗑️" : "📌"}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm text-white/75 truncate">{item.title}</p>
+                  <p className="text-xs text-white/25">{item.description}</p>
+                </div>
+                <span className="text-[10px] text-white/20 flex-shrink-0">{formatActivityTime(item.timestamp)}</span>
+              </div>
+            ))
+          )}
+        </div>
+      </motion.div>
     </motion.div>
   );
 }
@@ -256,4 +285,22 @@ function formatTime(seconds: number): string {
   const mins = Math.floor((seconds % 3600) / 60);
   if (hours === 0) return `${mins}m`;
   return `${hours}h ${mins}m`;
+}
+
+function formatActivityTime(timestamp: string): string {
+  try {
+    const date = new Date(timestamp);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMin = Math.floor(diffMs / 60000);
+    if (diffMin < 1) return "刚刚";
+    if (diffMin < 60) return `${diffMin}分钟前`;
+    const diffHr = Math.floor(diffMin / 60);
+    if (diffHr < 24) return `${diffHr}小时前`;
+    const diffDay = Math.floor(diffHr / 24);
+    if (diffDay < 7) return `${diffDay}天前`;
+    return date.toLocaleDateString("zh-CN", { month: "short", day: "numeric" });
+  } catch {
+    return "";
+  }
 }

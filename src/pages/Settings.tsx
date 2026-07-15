@@ -1,16 +1,28 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { useAppStore } from "../stores/appStore";
+import { useSettingsStore } from "../stores/settingsStore";
 
 export default function Settings() {
   const { gameInfo } = useAppStore();
-  const [theme, setTheme] = useState("aurora");
-  const [language, setLanguage] = useState("zh-CN");
-  const [autoUpdate, setAutoUpdate] = useState(true);
-  const [autoScan, setAutoScan] = useState(true);
-  const [minimizeToTray, setMinimizeToTray] = useState(true);
-  const [cloudSync, setCloudSync] = useState(false);
-  const [cloudService, setCloudService] = useState("webdav");
+  const {
+    theme, setTheme,
+    language, setLanguage,
+    sidebarCollapsed, setSidebarCollapsed,
+    autoUpdate, setAutoUpdate,
+    autoScan, setAutoScan,
+    minimizeToTray, setMinimizeToTray,
+    closeOnGameExit, setCloseOnGameExit,
+    cloudSync, setCloudSync,
+    cloudService, setCloudService,
+    cloudSyncInterval, setCloudSyncInterval,
+    loaded,
+  } = useSettingsStore();
+
+  // 首次加载时从数据库读取设置
+  useEffect(() => {
+    useSettingsStore.getState().loadSettings();
+  }, []);
 
   return (
     <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="space-y-6 max-w-2xl">
@@ -22,7 +34,7 @@ export default function Settings() {
       {/* Appearance */}
       <SettingsSection title="外观" icon="🎨">
         <SettingsRow label="主题">
-          <select value={theme} onChange={(e) => setTheme(e.target.value)}>
+          <select value={theme} onChange={(e) => setTheme(e.target.value)} disabled={!loaded}>
             <option value="aurora">极光 (Aurora)</option>
             <option value="dark">深色模式</option>
             <option value="light">浅色模式</option>
@@ -30,7 +42,7 @@ export default function Settings() {
           </select>
         </SettingsRow>
         <SettingsRow label="语言">
-          <select value={language} onChange={(e) => setLanguage(e.target.value)}>
+          <select value={language} onChange={(e) => setLanguage(e.target.value)} disabled={!loaded}>
             <option value="zh-CN">简体中文</option>
             <option value="zh-TW">繁體中文</option>
             <option value="en-US">English</option>
@@ -38,7 +50,7 @@ export default function Settings() {
           </select>
         </SettingsRow>
         <SettingsRow label="侧边栏默认状态">
-          <select defaultValue="expanded">
+          <select value={sidebarCollapsed ? "collapsed" : "expanded"} onChange={(e) => setSidebarCollapsed(e.target.value === "collapsed")} disabled={!loaded}>
             <option value="expanded">展开</option>
             <option value="collapsed">折叠</option>
           </select>
@@ -57,7 +69,7 @@ export default function Settings() {
           <button onClick={() => setMinimizeToTray(!minimizeToTray)} className={`switch ${minimizeToTray ? "active" : ""}`}><span className="switch-knob" /></button>
         </SettingsRow>
         <SettingsRow label="游戏退出后关闭启动器">
-          <button className="switch"><span className="switch-knob" /></button>
+          <button onClick={() => setCloseOnGameExit(!closeOnGameExit)} className={`switch ${closeOnGameExit ? "active" : ""}`}><span className="switch-knob" /></button>
         </SettingsRow>
       </SettingsSection>
 
@@ -76,7 +88,7 @@ export default function Settings() {
               </select>
             </SettingsRow>
             <SettingsRow label="自动同步间隔">
-              <select defaultValue="3600">
+              <select value={String(cloudSyncInterval)} onChange={(e) => setCloudSyncInterval(Number(e.target.value))}>
                 <option value="900">15 分钟</option>
                 <option value="1800">30 分钟</option>
                 <option value="3600">1 小时</option>
@@ -103,25 +115,25 @@ export default function Settings() {
       {/* Data Management */}
       <SettingsSection title="数据管理" icon="💾">
         <SettingsRow label="清理数据库缓存">
-          <button className="btn-secondary text-xs">清理</button>
+          <button className="btn-secondary text-xs" onClick={async () => { try { await import("@tauri-apps/api/core").then(m => m.invoke("clean_database_cache")); } catch {} }}>清理</button>
         </SettingsRow>
         <SettingsRow label="导出所有配置">
-          <button className="btn-secondary text-xs">导出</button>
+          <button className="btn-secondary text-xs" onClick={async () => { try { await import("@tauri-apps/api/core").then(m => m.invoke("export_all_config")); } catch {} }}>导出</button>
         </SettingsRow>
         <SettingsRow label="导入配置">
-          <button className="btn-secondary text-xs">导入</button>
+          <button className="btn-secondary text-xs" onClick={async () => { try { await import("@tauri-apps/api/core").then(m => m.invoke("import_config")); } catch {} }}>导入</button>
         </SettingsRow>
         <SettingsRow label="重置数据库">
-          <button className="btn-danger text-xs">重置</button>
+          <button className="btn-danger text-xs" onClick={async () => { if (confirm("确定重置数据库？所有数据将丢失！")) { try { await import("@tauri-apps/api/core").then(m => m.invoke("reset_database")); } catch {} } }}>重置</button>
         </SettingsRow>
         <SettingsRow label="清理所有日志">
-          <button className="btn-secondary text-xs">清理</button>
+          <button className="btn-secondary text-xs" onClick={async () => { try { await import("@tauri-apps/api/core").then(m => m.invoke("clean_logs")); } catch {} }}>清理</button>
         </SettingsRow>
       </SettingsSection>
 
       {/* About */}
       <SettingsSection title="关于" icon="ℹ️">
-        <SettingsRow label="版本" value="1.0.0" />
+        <SettingsRow label="版本" value="1.0.1" />
         <SettingsRow label="Tauri" value="2.0" />
         <SettingsRow label="前端" value="React 18 + Tailwind CSS" />
         <SettingsRow label="后端" value="Rust + SQLite" />

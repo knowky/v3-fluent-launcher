@@ -288,29 +288,7 @@ export default function Configuration() {
         </div>
       )}
 
-      {activeTab === "profiles" && (
-        <div className="space-y-3">
-          <p className="text-sm text-white/35">保存多套配置，通过场景管理一键切换</p>
-          {([
-            { id: "daily", name: "日常游玩", desc: "高画质、Mod全开", icon: "🎮" },
-            { id: "recording", name: "录制视频", desc: "最高画质、关闭UI Mod", icon: "🎬" },
-            { id: "testing", name: "测试 Mod", desc: "Debug模式、单Mod测试", icon: "🧪" },
-            { id: "multiplayer", name: "多人游戏", desc: "关闭Mod、平衡画质", icon: "👥" },
-          ]).map((profile) => (
-            <div key={profile.id} className="card p-4 flex items-center gap-4 hover:border-aurora-green/20 transition-all">
-              <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-base-700 to-base-600 flex items-center justify-center text-lg">{profile.icon}</div>
-              <div className="flex-1">
-                <p className="text-sm text-white/80">{profile.name}</p>
-                <p className="text-xs text-white/25">{profile.desc}</p>
-              </div>
-              <div className="flex gap-2">
-                <button onClick={handleAutoOptimize} className="btn-primary text-xs">自动优化</button>
-                <button onClick={handleSave} className="btn-secondary text-xs">保存当前</button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+      {activeTab === "profiles" && <ProfileManager config={config} onApplyProfile={(c) => setConfig(c)} />}
 
       {activeTab === "scene" && <SceneManager />}
     </motion.div>
@@ -402,6 +380,124 @@ function ConfigRow({ label, children }: { label: string; children: React.ReactNo
     <div className="flex items-start gap-6 py-3 border-b border-white/5 last:border-0">
       <span className="text-sm text-white/45 w-24 flex-shrink-0 pt-1">{label}</span>
       <div className="flex-1">{children}</div>
+    </div>
+  );
+}
+
+interface ConfigProfile {
+  id: string;
+  name: string;
+  config_json: string;
+  launch_args: string;
+  description: string;
+  updated_at: string;
+}
+
+function ProfileManager({ config, onApplyProfile }: { config: GameConfig; onApplyProfile: (c: GameConfig) => void }) {
+  const [profiles, setProfiles] = useState<ConfigProfile[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [savingId, setSavingId] = useState<string | null>(null);
+
+  const loadProfiles = async () => {
+    setLoading(true);
+    try {
+      const list: ConfigProfile[] = await invoke("get_config_profiles");
+      setProfiles(list);
+    } catch (e: any) {
+      console.error("Failed to load profiles:", e);
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => { loadProfiles(); }, []);
+
+  const handleSaveCurrent = async (profileId: string, profileName: string) => {
+    setSavingId(profileId);
+    try {
+      await invoke("save_config_profile", {
+        id: profileId,
+        name: profileName,
+        configJson: JSON.stringify(config),
+        launchArgs: "",
+        description: `画质预设: ${config.qualityPreset}`,
+      });
+      await loadProfiles();
+    } catch (e: any) {
+      console.error("Failed to save profile:", e);
+    }
+    setSavingId(null);
+  };
+
+  const handleDeleteProfile = async (profileId: string) => {
+    if (!confirm("确定删除此配置方案？")) return;
+    try {
+      await invoke("delete_config_profile", { id: profileId });
+      setProfiles((prev) => prev.filter((p) => p.id !== profileId));
+    } catch (e: any) {
+      console.error("Failed to delete profile:", e);
+    }
+  };
+
+  const handleApplyProfile = (profile: ConfigProfile) => {
+    try {
+      const savedConfig = JSON.parse(profile.config_json);
+      onApplyProfile(savedConfig as GameConfig);
+    } catch {}
+  };
+
+  const presetProfiles = [
+    { id: "daily", name: "日常游玩", desc: "高画质、Mod全开", icon: "🎮" },
+    { id: "recording", name: "录制视频", desc: "最高画质、关闭UI Mod", icon: "🎬" },
+    { id: "testing", name: "测试 Mod", desc: "Debug模式、单Mod测试", icon: "🧪" },
+    { id: "multiplayer", name: "多人游戏", desc: "关闭Mod、平衡画质", icon: "👥" },
+  ];
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-white/35">保存多套配置，通过场景管理一键切换</p>
+        <button onClick={loadProfiles} disabled={loading} className="btn-secondary text-xs">{loading ? "加载中..." : "🔄 刷新"}</button>
+      </div>
+
+      {/* 预设方案 */}
+      <p className="text-xs text-white/20 mb-1">预设方案</p>
+      <div className="space-y-2">
+        {presetProfiles.map((profile) => (
+          <div key={profile.id} className="card p-3.5 flex items-center gap-3 hover:border-aurora-green/20 transition-all">
+            <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-base-700 to-base-600 flex items-center justify-center text-base flex-shrink-0">{profile.icon}</div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm text-white/80">{profile.name}</p>
+              <p className="text-xs text-white/25 truncate">{profile.desc}</p>
+            </div>
+            <div className="flex gap-1.5 flex-shrink-0">
+              <button onClick={() => handleSaveCurrent(profile.id, profile.name)} disabled={savingId === profile.id}
+                className="btn-secondary text-xs">{savingId === profile.id ? "保存中..." : "保存当前"}</button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* 已保存的方案 */}
+      {profiles.length > 0 && (
+        <>
+          <p className="text-xs text-white/20 mb-1 pt-2">已保存方案</p>
+          <div className="space-y-2">
+            {profiles.map((profile) => (
+              <div key={profile.id} className="card p-3.5 flex items-center gap-3 group">
+                <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-aurora-green/10 to-aurora-blue/10 flex items-center justify-center text-base flex-shrink-0">💾</div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm text-white/80">{profile.name}</p>
+                  <p className="text-xs text-white/25 truncate">{profile.description} · {profile.updated_at?.slice(0, 10)}</p>
+                </div>
+                <div className="flex gap-1.5 flex-shrink-0 opacity-80 group-hover:opacity-100 transition-opacity">
+                  <button onClick={() => handleApplyProfile(profile)} className="btn-primary text-xs">应用</button>
+                  <button onClick={() => handleDeleteProfile(profile.id)} className="btn-ghost text-xs text-error">删除</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }

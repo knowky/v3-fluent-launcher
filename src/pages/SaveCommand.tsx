@@ -1,7 +1,15 @@
 import { useEffect, useState, useMemo } from "react";
 import { motion } from "framer-motion";
 import { useAppStore } from "../stores/appStore";
+import { invoke } from "@tauri-apps/api/core";
 import type { SaveInfo } from "../types";
+
+interface BackupInfo {
+  name: string;
+  file_path: string;
+  date: string;
+  size: number;
+}
 
 export default function SaveCommand() {
   const { saves, scanSaves, deleteSave } = useAppStore();
@@ -10,7 +18,8 @@ export default function SaveCommand() {
   const [filterHealth, setFilterHealth] = useState("all");
   const [sortOrder, setSortOrder] = useState<"date" | "name" | "size">("date");
   const [showBackup, setShowBackup] = useState(false);
-  const [backups, setBackups] = useState<{ name: string; date: string; size: string }[]>([]);
+  const [backups, setBackups] = useState<BackupInfo[]>([]);
+  const [backupLoading, setBackupLoading] = useState(false);
 
   useEffect(() => { scanSaves(); }, []);
 
@@ -36,12 +45,61 @@ export default function SaveCommand() {
     }
   };
 
-  const handleBackup = () => {
-    setShowBackup(true);
-    setBackups([
-      { name: "自动备份_20240701", date: "2024-07-01 12:00", size: "12.5MB" },
-      { name: "自动备份_20240615", date: "2024-06-15 08:30", size: "10.2MB" },
-    ]);
+  const handleBackupPanel = async () => {
+    setShowBackup(!showBackup);
+    if (!showBackup) {
+      await loadBackups();
+    }
+  };
+
+  const loadBackups = async () => {
+    try {
+      setBackupLoading(true);
+      const list: BackupInfo[] = await invoke("list_save_backups");
+      setBackups(list);
+    } catch (e) {
+      console.error("加载备份列表失败:", e);
+    } finally {
+      setBackupLoading(false);
+    }
+  };
+
+  const handleCreateBackup = async () => {
+    if (!selectedSave) return;
+    try {
+      const result: BackupInfo = await invoke("create_save_backup", {
+        saveId: selectedSave.id,
+        filePath: selectedSave.file_path,
+      });
+      setBackups((prev) => [result, ...prev]);
+    } catch (e: any) {
+      console.error("创建备份失败:", e);
+    }
+  };
+
+  const handleRestoreBackup = async (backup: BackupInfo) => {
+    const targetName = backup.name.replace(/^backup_\d{14}_/, "");
+    if (!confirm(`确定恢复备份 "${targetName}"？当前存档将被覆盖。`)) return;
+    try {
+      await invoke("restore_save_backup", {
+        backupName: backup.name,
+        targetFileName: targetName,
+      });
+      await scanSaves();
+      await loadBackups();
+    } catch (e: any) {
+      console.error("恢复备份失败:", e);
+    }
+  };
+
+  const handleDeleteBackup = async (backup: BackupInfo) => {
+    if (!confirm(`确定删除备份 "${backup.name}"？`)) return;
+    try {
+      await invoke("delete_save_backup", { backupName: backup.name });
+      setBackups((prev) => prev.filter((b) => b.name !== backup.name));
+    } catch (e: any) {
+      console.error("删除备份失败:", e);
+    }
   };
 
   const healthStats = {
@@ -60,7 +118,7 @@ export default function SaveCommand() {
           <p className="text-xs text-white/30 mt-0.5">{healthStats.total} 存档 · {healthStats.healthy} 健康</p>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={handleBackup} className="btn-secondary text-xs">📦 备份管理</button>
+          <button onClick={handleBackupPanel} className="btn-secondary text-xs">📦 备份管理</button>
           <button onClick={scanSaves} className="btn-primary text-xs">🔄 刷新存档</button>
         </div>
       </div>
@@ -156,7 +214,7 @@ export default function SaveCommand() {
               <div className="flex gap-2 pt-2 border-t border-white/5">
                 <button className="btn-secondary text-xs flex-1">📝 备注</button>
                 <button className="btn-secondary text-xs flex-1">📤 导出</button>
-                <button className="btn-secondary text-xs flex-1" onClick={() => handleBackup()}>💾 备份</button>
+                <button className="btn-secondary text-xs flex-1" onClick={async () => { setShowBackup(true); await loadBackups(); }}>💾 备份</button>
               </div>
             </div>
           ) : (
@@ -177,22 +235,22 @@ export default function SaveCommand() {
             <button onClick={() => setShowBackup(false)} className="btn-ghost text-xs">关闭</button>
           </div>
           <div className="flex gap-2 mb-2">
-            <button className="btn-primary text-xs">+ 创建备份</button>
-            <button className="btn-secondary text-xs">📥 导入备份</button>
+            <button onClick={handleCreateBackup} disabled={!selectedSave} className="btn-primary text-xs" title={!selectedSave ? "请先选择一个存档" : ""}>+ 创建备份</button>
+            <button onClick={loadBackups} disabled={backupLoading} className="btn-secondary text-xs">{backupLoading ? "加载中..." : "🔄 刷新"}</button>
           </div>
           {backups.length === 0 ? (
-            <p className="text-xs text-white/25 text-center py-6">暂无备份，点击"创建备份"来保护你的存档</p>
+            <p className="text-xs text-white/25 text-center py-6">暂无备份，选择存档后点击"创建备份"来保护你的存档</p>
           ) : (
-            <div className="space-y-2">
-              {backups.map((b, i) => (
-                <div key={i} className="card p-3 flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-white/80">{b.name}</p>
-                    <p className="text-xs text-white/25">{b.date} · {b.size}</p>
+            <div className="space-y-2 max-h-64 overflow-y-auto">
+              {backups.map((b) => (
+                <div key={b.name} className="card p-3 flex items-center justify-between">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-white/80 truncate">{b.name.replace(/^backup_\d{14}_/, "")}</p>
+                    <p className="text-xs text-white/25">{b.date} · {formatSize(b.size)}</p>
                   </div>
-                  <div className="flex gap-2">
-                    <button className="btn-secondary text-xs">恢复</button>
-                    <button className="btn-ghost text-xs text-error">删除</button>
+                  <div className="flex gap-2 flex-shrink-0 ml-3">
+                    <button onClick={() => handleRestoreBackup(b)} className="btn-secondary text-xs">恢复</button>
+                    <button onClick={() => handleDeleteBackup(b)} className="btn-ghost text-xs text-error">删除</button>
                   </div>
                 </div>
               ))}

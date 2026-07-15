@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { useAppStore } from "../stores/appStore";
+import { invoke } from "@tauri-apps/api/core";
 
 type ToolId = "log" | "screenshot" | "calculator" | "performance" | "cache";
 
@@ -45,6 +46,7 @@ function LogAnalyzer() {
   const [logContent, setLogContent] = useState("");
   const [analysis, setAnalysis] = useState<string[]>([]);
   const [stats, setStats] = useState<{ errors: number; warnings: number; mods: string[] }>({ errors: 0, warnings: 0, mods: [] });
+  const [loadingLog, setLoadingLog] = useState(false);
 
   const handleAnalyze = () => {
     const lines = logContent.split("\n");
@@ -56,18 +58,31 @@ function LogAnalyzer() {
     setAnalysis(errors.length > 0 ? errors.slice(0, 20) : ["未发现明显错误"]);
   };
 
+  const handleLoadLog = async () => {
+    setLoadingLog(true);
+    try {
+      const content: string = await invoke("read_game_log");
+      setLogContent(content);
+    } catch (e: any) {
+      console.error("Failed to load log:", e);
+      setLogContent("[无法自动读取日志文件]\n请手动粘贴日志内容，或确认游戏路径正确。\n\n错误: " + String(e));
+    }
+    setLoadingLog(false);
+  };
+
   return (
     <div className="card p-4 space-y-4">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold text-white/70">📋 Victoria 3 日志分析器</h3>
         <div className="flex gap-2">
+          <button onClick={handleLoadLog} disabled={loadingLog} className="btn-secondary text-xs">{loadingLog ? "加载中..." : "📂 加载日志"}</button>
           <button onClick={handleAnalyze} className="btn-primary text-xs">🔍 分析</button>
           <button onClick={() => { setLogContent(""); setAnalysis([]); setStats({ errors: 0, warnings: 0, mods: [] }); }} className="btn-secondary text-xs">清空</button>
         </div>
       </div>
 
       <textarea value={logContent} onChange={(e) => setLogContent(e.target.value)}
-        placeholder="粘贴 error.log 或 game.log 内容到这里..."
+        placeholder="粘贴 error.log 或 game.log 内容，或点击"加载日志"自动读取..."
         className="w-full h-44 text-xs" />
 
       {analysis.length > 0 && (
@@ -102,29 +117,46 @@ function LogAnalyzer() {
 }
 
 function ScreenshotManager() {
-  const screenshots = [
-    { name: "大清_1880_01_01.png", date: "1880.1.1", size: "2.4MB" },
-    { name: "普鲁士_1872_06_15.png", date: "1872.6.15", size: "3.1MB" },
-    { name: "日本_1890_12_25.png", date: "1890.12.25", size: "1.8MB" },
-  ];
+  const [screenshots, setScreenshots] = useState<{ name: string; file_path: string; date: string; size: number }[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const loadScreenshots = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const list = await invoke<{ name: string; file_path: string; date: string; size: number }[]>("list_screenshots");
+      setScreenshots(list);
+      if (list.length === 0) setError("截图目录为空");
+    } catch (e: any) {
+      setError("加载失败: " + String(e));
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => { loadScreenshots(); }, []);
 
   return (
     <div className="card p-4 space-y-4">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold text-white/70">📸 游戏截图</h3>
-        <button className="btn-secondary text-xs">🔄 刷新</button>
+        <button onClick={loadScreenshots} disabled={loading} className="btn-secondary text-xs">{loading ? "加载中..." : "🔄 刷新"}</button>
       </div>
-      <div className="grid grid-cols-3 gap-3">
-        {screenshots.map((ss, i) => (
-          <div key={i} className="card p-2 group cursor-pointer">
-            <div className="w-full h-24 bg-gradient-to-br from-base-700 to-base-600 rounded flex items-center justify-center mb-1.5 group-hover:from-base-600 group-hover:to-base-500 transition-all">
-              <span className="text-2xl opacity-20">📸</span>
+      {error && <p className="text-xs text-white/25 text-center py-6">{error}</p>}
+      {screenshots.length > 0 && (
+        <div className="grid grid-cols-3 gap-3 max-h-96 overflow-y-auto">
+          {screenshots.map((ss) => (
+            <div key={ss.file_path} className="card p-2 group cursor-pointer hover:border-aurora-green/20 transition-all"
+              onClick={() => { try { import("@tauri-apps/plugin-shell").then(m => m.open(ss.file_path)); } catch {} }}>
+              <div className="w-full h-24 bg-gradient-to-br from-base-700 to-base-600 rounded flex items-center justify-center mb-1.5 group-hover:from-base-600 group-hover:to-base-500 transition-all overflow-hidden">
+                <span className="text-2xl opacity-20">📸</span>
+              </div>
+              <p className="text-xs text-white/60 truncate">{ss.name}</p>
+              <p className="text-[10px] text-white/25">{ss.date} · {formatScreenshotSize(ss.size)}</p>
             </div>
-            <p className="text-xs text-white/60 truncate">{ss.name}</p>
-            <p className="text-[10px] text-white/25">{ss.date} · {ss.size}</p>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
       <p className="text-xs text-white/20">截图位置: 文档\Paradox Interactive\Victoria 3\screenshots\</p>
     </div>
   );
@@ -231,7 +263,7 @@ function PerformanceOptimizer() {
 
 function CacheCleaner() {
   const [cleaning, setCleaning] = useState(false);
-  const [cleaned, setCleaned] = useState(false);
+  const [cleaned, setCleaned] = useState<string[]>([]);
   const items = [
     { name: "Shader 缓存", path: "Documents/Paradox Interactive/Victoria 3/shadercache", size: "~50MB" },
     { name: "临时文件", path: "Documents/Paradox Interactive/Victoria 3/temp", size: "~10MB" },
@@ -240,10 +272,15 @@ function CacheCleaner() {
 
   const handleClean = async () => {
     setCleaning(true);
-    await new Promise((r) => setTimeout(r, 1500));
+    setCleaned([]);
+    try {
+      const result: string[] = await invoke("clean_cache");
+      setCleaned(result);
+      setTimeout(() => setCleaned([]), 5000);
+    } catch (e: any) {
+      console.error("Cache clean failed:", e);
+    }
     setCleaning(false);
-    setCleaned(true);
-    setTimeout(() => setCleaned(false), 3000);
   };
 
   return (
@@ -262,10 +299,25 @@ function CacheCleaner() {
       </div>
       <div className="flex gap-2">
         <button onClick={handleClean} disabled={cleaning} className="btn-primary text-sm">
-          {cleaning ? "清理中..." : cleaned ? "✅ 清理完成" : "🧹 清理所有缓存"}
+          {cleaning ? "清理中..." : cleaned.length > 0 ? "✅ 清理完成" : "🧹 清理所有缓存"}
         </button>
       </div>
+      {cleaned.length > 0 && (
+        <div className="card bg-aurora-green/5 border border-aurora-green/10 p-3 rounded-lg">
+          <p className="text-xs text-aurora-green mb-1">已清理：</p>
+          {cleaned.map((item, i) => (
+            <p key={i} className="text-xs text-white/60">{item}</p>
+          ))}
+        </div>
+      )}
       <p className="text-xs text-white/20">清理缓存不会影响存档和 Mod，但可能增加下次启动的加载时间</p>
     </div>
   );
+}
+
+function formatScreenshotSize(bytes: number): string {
+  if (!bytes || bytes === 0) return "0B";
+  if (bytes < 1024) return `${bytes}B`;
+  if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)}KB`;
+  return `${(bytes / 1048576).toFixed(1)}MB`;
 }
