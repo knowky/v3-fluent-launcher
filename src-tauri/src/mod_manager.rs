@@ -106,7 +106,7 @@ fn scan_workshop_mods(workshop_path: &str) -> Vec<ModInfo> {
 
 /// 扫描本地 Mod 目录
 fn scan_local_mods(user_data_path: &str) -> Vec<ModInfo> {
-    let mut mods = Vec::new>();
+    let mut mods = Vec::new();
     let mod_path = PathBuf::from(user_data_path).join("mod");
 
     if !mod_path.exists() {
