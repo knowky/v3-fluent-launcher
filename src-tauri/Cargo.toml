@@ -1,6 +1,6 @@
 [package]
 name = "v3-fluent-launcher"
-version = "1.0.1"
+version = "1.0.2"
 description = "Victoria 3 Fluent Launcher - Modern mod manager & game launcher"
 authors = ["v3fl"]
 edition = "2021"
