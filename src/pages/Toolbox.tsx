@@ -82,7 +82,7 @@ function LogAnalyzer() {
       </div>
 
       <textarea value={logContent} onChange={(e) => setLogContent(e.target.value)}
-        placeholder="粘贴 error.log 或 game.log 内容，或点击"加载日志"自动读取..."
+        placeholder={'粘贴 error.log 或 game.log 内容，或点击「加载日志」自动读取...'}
         className="w-full h-44 text-xs" />
 
       {analysis.length > 0 && (
