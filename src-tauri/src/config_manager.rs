@@ -122,30 +122,32 @@ pub fn write_pdx_settings(user_data_path: &str, settings: &GameSettings) -> Resu
         serde_json::json!({})
     };
 
+    // 确保 System 和 Graphics 节点存在
+    if json.get("System").map_or(true, |v| !v.is_object()) {
+        json["System"] = serde_json::json!({});
+    }
+    if json.get("Graphics").map_or(true, |v| !v.is_object()) {
+        json["Graphics"] = serde_json::json!({});
+    }
+
     // System
-    let system = json
-        .entry("System")
-        .or_insert(serde_json::json!({}));
-    system["display_resolution"] =
+    json["System"]["display_resolution"] =
         serde_json::json!([settings.resolution.width, settings.resolution.height]);
-    system["display_mode"] = if settings.fullscreen {
+    json["System"]["display_mode"] = if settings.fullscreen {
         serde_json::json!("fullscreen")
     } else {
         serde_json::json!("borderless_window")
     };
-    system["vsync"] = serde_json::json!(settings.vsync);
-    system["max_refresh_rate"] = serde_json::json!(settings.fps_limit);
+    json["System"]["vsync"] = serde_json::json!(settings.vsync);
+    json["System"]["max_refresh_rate"] = serde_json::json!(settings.fps_limit);
 
     // Graphics
-    let gfx = json
-        .entry("Graphics")
-        .or_insert(serde_json::json!({}));
-    gfx["shader_quality"] = serde_json::json!(settings.quality);
-    gfx["shadow_quality"] = serde_json::json!(settings.shadow_quality);
-    gfx["multi_sampling"] = serde_json::json!(settings.anti_aliasing);
-    gfx["texture_quality"] = serde_json::json!(settings.texture_quality);
-    gfx["ui_scaling"] = serde_json::json!(settings.ui_scale);
-    gfx["anisotropic_filtering"] = serde_json::json!(settings.anisotropic);
+    json["Graphics"]["shader_quality"] = serde_json::json!(settings.quality);
+    json["Graphics"]["shadow_quality"] = serde_json::json!(settings.shadow_quality);
+    json["Graphics"]["multi_sampling"] = serde_json::json!(settings.anti_aliasing);
+    json["Graphics"]["texture_quality"] = serde_json::json!(settings.texture_quality);
+    json["Graphics"]["ui_scaling"] = serde_json::json!(settings.ui_scale);
+    json["Graphics"]["anisotropic_filtering"] = serde_json::json!(settings.anisotropic);
 
     let content =
         serde_json::to_string_pretty(&json).map_err(|e| format!("设置序列化失败: {}", e))?;
